@@ -251,12 +251,8 @@ export class OpenaiResponsesApi extends CommonApi<ResponsesInputItem, Record<str
 			};
 		}
 
-		// thinking (Volcengine provider)
-		if (um?.thinking?.type !== undefined) {
-			rb.thinking = {
-				type: um.thinking.type,
-			};
-		}
+		// OpenAI Responses uses `reasoning`, not the provider-specific
+		// top-level `thinking` parameter. Reasoning effort is configured above.
 
 		// stop
 		if (options?.modelOptions) {
