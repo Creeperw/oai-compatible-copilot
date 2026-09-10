@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { AnthropicApi } from "../anthropic/anthropicApi";
-import { GeminiApi } from "../gemini/geminiApi";
+import { buildGeminiGenerateContentUrl, GeminiApi } from "../gemini/geminiApi";
 import {
 	createReasoningEffortConfigurationSchema,
 	getConfiguredReasoningEffort,
@@ -13,6 +13,7 @@ import { OllamaApi } from "../ollama/ollamaApi";
 import { OpenaiApi } from "../openai/openaiApi";
 import { OpenaiResponsesApi } from "../openai/openaiResponsesApi";
 import { prepareLanguageModelChatInformation } from "../provideModel";
+import { createRuntimeModelId } from "../modelIdentity";
 import type { HFModelItem } from "../types";
 
 suite("modelConfiguration", () => {
@@ -60,16 +61,18 @@ suite("modelConfiguration", () => {
 		const config = vscode.workspace.getConfiguration();
 		const previousModels = config.get<unknown>("oaicopilot.models", []);
 		const cts = new vscode.CancellationTokenSource();
-		const model: HFModelItem = { ...deepSeekModel, id: "deepseek-v4-flash", displayName: undefined };
+		const model: HFModelItem = { ...deepSeekModel, id: "deepseek-v4-flash", displayName: "DeepSeek V4 Flash" };
 
 		try {
 			await config.update("oaicopilot.models", [model], vscode.ConfigurationTarget.Global);
 
 			const infos = await prepareLanguageModelChatInformation({ silent: true }, cts.token, {} as vscode.SecretStorage);
-			const info = infos.find((item) => item.id === "deepseek-v4-flash") as ModelPickerChatInformation | undefined;
+			const info = infos.find((item) => item.id === createRuntimeModelId(model)) as
+				| ModelPickerChatInformation
+				| undefined;
 
 			assert.ok(info, "deepseek-v4-flash should be registered");
-			assert.strictEqual(info.name, "deepseek-v4-flash");
+			assert.strictEqual(info.name, "DeepSeek V4 Flash");
 			assert.strictEqual(info.detail, "deepseek (OAICopilot)");
 			assert.strictEqual(info.isUserSelectable, true);
 			assert.strictEqual(info.isBYOK, true);
@@ -87,7 +90,7 @@ suite("modelConfiguration", () => {
 		const model: HFModelItem = {
 			...deepSeekModel,
 			id: "deepseek-v4-flash",
-			displayName: undefined,
+			displayName: "DeepSeek V4 Flash",
 			reasoning_effort: undefined,
 		};
 
@@ -95,7 +98,9 @@ suite("modelConfiguration", () => {
 			await config.update("oaicopilot.models", [model], vscode.ConfigurationTarget.Global);
 
 			const infos = await prepareLanguageModelChatInformation({ silent: true }, cts.token, {} as vscode.SecretStorage);
-			const info = infos.find((item) => item.id === "deepseek-v4-flash") as ModelPickerChatInformation | undefined;
+			const info = infos.find((item) => item.id === createRuntimeModelId(model)) as
+				| ModelPickerChatInformation
+				| undefined;
 
 			assert.ok(info, "deepseek-v4-flash should be registered");
 			assert.strictEqual(info.configurationSchema, undefined);
@@ -133,6 +138,92 @@ suite("modelConfiguration", () => {
 		);
 
 		assert.deepStrictEqual(requestBody.reasoning, { effort: "max" });
+	});
+
+	test("does not send the unsupported top-level thinking parameter to OpenAI Responses", () => {
+		const requestBody = new OpenaiResponsesApi("deepseek-v4-pro").prepareRequestBody(
+			{ model: "deepseek-v4-pro", input: [], stream: true },
+			{
+				...deepSeekModel,
+				apiMode: "openai-responses",
+				thinking: { type: "enabled" },
+			},
+			undefined
+		);
+
+		assert.strictEqual(requestBody.thinking, undefined);
+	});
+
+	test("never lets extra.model override the configured raw model ID", () => {
+		const extra = { model: "attacker-model", custom: true };
+		const openaiBody = new OpenaiApi("raw-model").prepareRequestBody(
+			{ model: "raw-model", messages: [], stream: true },
+			{ ...deepSeekModel, id: "raw-model", extra }
+		);
+		const responsesBody = new OpenaiResponsesApi("raw-model").prepareRequestBody(
+			{ model: "raw-model", input: [], stream: true },
+			{ ...deepSeekModel, id: "raw-model", apiMode: "openai-responses", extra }
+		);
+		const anthropicBody = new AnthropicApi("raw-model").prepareRequestBody(
+			{ model: "raw-model", messages: [], max_tokens: 1024, stream: true },
+			{ ...deepSeekModel, id: "raw-model", apiMode: "anthropic", extra }
+		) as unknown as Record<string, unknown>;
+		const ollamaBody = new OllamaApi("raw-model").prepareRequestBody(
+			{ model: "raw-model", messages: [], stream: true },
+			{ ...deepSeekModel, id: "raw-model", apiMode: "ollama", extra }
+		) as unknown as Record<string, unknown>;
+		const geminiBody = new GeminiApi("raw-model").prepareRequestBody(
+			{ contents: [] },
+			{ ...deepSeekModel, id: "raw-model", apiMode: "gemini", extra }
+		) as Record<string, unknown>;
+
+		for (const body of [openaiBody, responsesBody, anthropicBody, ollamaBody]) {
+			assert.strictEqual(body.model, "raw-model");
+			assert.strictEqual(body.custom, true);
+		}
+		assert.strictEqual(geminiBody.model, undefined);
+		assert.strictEqual(geminiBody.custom, true);
+	});
+
+	test("preserves Gemini raw resource paths containing slashes", () => {
+		assert.strictEqual(
+			new URL(buildGeminiGenerateContentUrl("https://generativelanguage.googleapis.com", "gemini-2.5-pro", true))
+				.pathname,
+			"/v1beta/models/gemini-2.5-pro:streamGenerateContent"
+		);
+		assert.strictEqual(
+			new URL(
+				buildGeminiGenerateContentUrl("https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-pro", false)
+			).pathname,
+			"/v1beta/models/gemini-2.5-pro:generateContent"
+		);
+		assert.strictEqual(
+			new URL(
+				buildGeminiGenerateContentUrl("https://generativelanguage.googleapis.com/v1beta/models", "gemini-2.5-pro", true)
+			).pathname,
+			"/v1beta/models/gemini-2.5-pro:streamGenerateContent"
+		);
+		assert.strictEqual(
+			new URL(buildGeminiGenerateContentUrl("https://generativelanguage.googleapis.com", "tunedModels/my-model", true))
+				.pathname,
+			"/v1beta/tunedModels/my-model:streamGenerateContent"
+		);
+		assert.strictEqual(
+			new URL(
+				buildGeminiGenerateContentUrl("https://generativelanguage.googleapis.com", "publishers/acme/models/foo", false)
+			).pathname,
+			"/v1beta/publishers/acme/models/foo:generateContent"
+		);
+		assert.strictEqual(
+			new URL(
+				buildGeminiGenerateContentUrl(
+					"https://generativelanguage.googleapis.com/v1beta/models/old:generateContent",
+					"ignored-model-id",
+					true
+				)
+			).pathname,
+			"/v1beta/models/old:streamGenerateContent"
+		);
 	});
 
 	test("keeps the picker out of unsupported native API request bodies", () => {

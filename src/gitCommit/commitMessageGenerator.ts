@@ -5,9 +5,10 @@ import { OpenaiApi } from "../openai/openaiApi";
 import { OpenaiResponsesApi } from "../openai/openaiResponsesApi";
 import { AnthropicApi } from "../anthropic/anthropicApi";
 import { OllamaApi } from "../ollama/ollamaApi";
-import { normalizeUserModels } from "../utils";
+import { getGlobalProviderAliases, getGlobalUserModels, getProviderApiKey } from "../utils";
 import { logger } from "../logger";
 import type { HFModelItem } from "../types";
+import { assertValidModelCollection, isProviderPlaceholder, resolveModelConnection } from "../modelIdentity";
 
 /**
  * Git commit message generator module
@@ -171,21 +172,30 @@ async function performCommitMsgGeneration(secrets: vscode.SecretStorage, gitDiff
 		const prompt = prompts.join("\n\n");
 
 		// Get user models from configuration
-		const userModels = normalizeUserModels(config.get<unknown>("oaicopilot.models", []));
+		const userModels = getGlobalUserModels(config);
+		assertValidModelCollection(userModels);
 
 		// Filter models that are marked for commit generation
-		const commitModels = userModels.filter((model: HFModelItem) => model.useForCommitGeneration === true);
+		const commitModels = userModels.filter(
+			(model: HFModelItem) => !isProviderPlaceholder(model) && model.useForCommitGeneration === true
+		);
 
 		if (commitModels.length === 0) {
 			throw new Error(
 				"No models configured for commit message generation. Please set 'useForCommitGeneration' to true for at least one model in your configuration."
 			);
 		}
+		if (commitModels.length > 1) {
+			throw new Error("Multiple models are configured for commit message generation. Select exactly one model.");
+		}
 
 		// Use the first model marked for commit generation
-		const selectedModel = commitModels[0];
+		const selectedModel = resolveModelConnection(userModels, commitModels[0]);
 		modelId = selectedModel.id;
 		logger.info("commit.start", { modelId });
+		if ((selectedModel.apiMode ?? "openai") === "gemini") {
+			throw new Error("Gemini API mode is not supported for commit message generation.");
+		}
 
 		// Get API key for the model's provider
 		const apiKey = await ensureApiKey(secrets, selectedModel.owned_by);
@@ -194,9 +204,9 @@ async function performCommitMsgGeneration(secrets: vscode.SecretStorage, gitDiff
 		}
 
 		// Get base URL for the model
-		const baseUrl = selectedModel.baseUrl || config.get<string>("oaicopilot.baseUrl", "");
+		const baseUrl = selectedModel.baseUrl || "";
 		if (!baseUrl || !baseUrl.startsWith("http")) {
-			throw new Error(`Invalid base URL configuration.`);
+			throw new Error(`Invalid Base URL for provider "${selectedModel.owned_by}".`);
 		}
 
 		// Get commit language configuration
@@ -279,17 +289,7 @@ function removeThinkTags(text: string): string {
  * @param provider provider name to get provider-specific API key.
  */
 async function ensureApiKey(secrets: vscode.SecretStorage, provider: string): Promise<string | undefined> {
-	let apiKey: string | undefined;
-	if (provider && provider.trim() !== "") {
-		const normalizedProvider = provider.trim().toLowerCase();
-		const providerKey = `oaicopilot.apiKey.${normalizedProvider}`;
-		apiKey = await secrets.get(providerKey);
-	}
-
-	// Fall back to generic API key
-	if (!apiKey) {
-		apiKey = await secrets.get("oaicopilot.apiKey");
-	}
-
-	return apiKey;
+	const normalizedProvider = provider.trim().toLowerCase();
+	const aliases = getGlobalProviderAliases(vscode.workspace.getConfiguration()).get(normalizedProvider) ?? [];
+	return getProviderApiKey(secrets, normalizedProvider, aliases);
 }

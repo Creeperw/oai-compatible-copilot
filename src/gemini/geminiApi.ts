@@ -142,16 +142,15 @@ function normalizeGeminiModelPath(modelId: string): string {
 		return "models/gemini-3-pro-preview";
 	}
 
-	const last = raw.includes("/") ? raw.split("/").filter(Boolean).pop() || raw : raw;
-	if (last.startsWith("models/") || last.startsWith("tunedModels/")) {
-		return last;
-	}
-
-	if (last.includes("..") || last.includes("?") || last.includes("&")) {
+	if (raw.includes("?") || raw.includes("&") || raw.includes("#") || raw.includes(":")) {
 		return "";
 	}
-
-	return `models/${last}`;
+	const segments = raw.split("/");
+	if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+		return "";
+	}
+	const encodedPath = segments.map((segment) => encodeURIComponent(segment)).join("/");
+	return segments.length === 1 ? `models/${encodedPath}` : encodedPath;
 }
 
 export function buildGeminiGenerateContentUrl(rawBaseUrl: string, modelId: string, stream: boolean): string {
@@ -180,6 +179,9 @@ export function buildGeminiGenerateContentUrl(rawBaseUrl: string, modelId: strin
 		const modelPath = normalizeGeminiModelPath(modelId);
 		if (!modelPath) {
 			return "";
+		}
+		if (/\/models$/i.test(basePath) && modelPath.startsWith("models/")) {
+			basePath = basePath.slice(0, -"/models".length);
 		}
 
 		// If base already contains a version segment, don't append again.
@@ -751,6 +753,9 @@ export class GeminiApi extends CommonApi<GeminiChatMessage, GeminiGenerateConten
 		// extra parameters
 		if (um?.extra && typeof um.extra === "object") {
 			for (const [key, value] of Object.entries(um.extra)) {
+				if (key === "model") {
+					continue;
+				}
 				if (value !== undefined) {
 					if (key === "tools" && Array.isArray(value) && rb.tools) {
 						rb.tools = [...rb.tools, ...value];

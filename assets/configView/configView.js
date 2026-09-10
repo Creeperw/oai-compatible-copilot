@@ -1,7 +1,5 @@
 const vscode = acquireVsCodeApi();
 const state = {
-	baseUrl: "",
-	apiKey: "",
 	delay: 0,
 	retry: { enabled: true, max_attempts: 3, interval_ms: 1000, status_codes: [429, 500, 502, 503, 504] },
 	commitModel: "",
@@ -12,10 +10,9 @@ const state = {
 
 // Store the action to be performed after confirmation
 const pendingConfirmations = new Map();
+const pendingOperations = new Map();
 
 // Global Configuration elements
-const baseUrlInput = document.getElementById("baseUrl");
-const apiKeyInput = document.getElementById("apiKey");
 const delayInput = document.getElementById("delay");
 const readFileLinesInput = document.getElementById("readFileLines");
 const retryEnabledInput = document.getElementById("retryEnabled");
@@ -25,6 +22,7 @@ const statusCodesInput = document.getElementById("statusCodes");
 
 // Provider management elements
 const providerTableBody = document.getElementById("providerTableBody");
+const providerErrorElement = document.getElementById("providerError");
 
 // Model management elements
 const modelTableBody = document.getElementById("modelTableBody");
@@ -75,6 +73,45 @@ const modelErrorElement = document.getElementById("modelError");
 const dropdownContent = modelIdDropdown.querySelector(".dropdown-content");
 const dropdownHeader = modelIdDropdown.querySelector(".dropdown-header");
 
+function createOperationId(prefix) {
+	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function postOperation(message, onSuccess, onError) {
+	const requestId = createOperationId(message.type);
+	const timeout = setTimeout(() => {
+		const pending = pendingOperations.get(requestId);
+		if (pending) {
+			pendingOperations.delete(requestId);
+			pending.onError?.("The operation timed out. Refresh the configuration and try again.");
+		}
+	}, 15000);
+	pendingOperations.set(requestId, { onSuccess, onError, timeout });
+	vscode.postMessage({ ...message, requestId });
+}
+
+function showProviderError(message) {
+	if (providerErrorElement) {
+		providerErrorElement.textContent = message;
+		providerErrorElement.style.display = message ? "block" : "none";
+	}
+}
+
+function parseJsonObject(value, label) {
+	if (!value || value.trim() === "") {
+		return { ok: true, value: undefined };
+	}
+	try {
+		const parsed = JSON.parse(value.trim());
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			return { ok: false, error: `${label} must be a JSON object.` };
+		}
+		return { ok: true, value: parsed };
+	} catch (error) {
+		return { ok: false, error: `${label} is invalid JSON: ${error.message}` };
+	}
+}
+
 // Global Configuration save button event listener
 document.getElementById("saveBase").addEventListener("click", () => {
 	const retry = {
@@ -89,16 +126,18 @@ document.getElementById("saveBase").addEventListener("click", () => {
 			: [],
 	};
 
-	vscode.postMessage({
-		type: "saveGlobalConfig",
-		baseUrl: baseUrlInput.value,
-		apiKey: apiKeyInput.value,
-		delay: parseInt(delayInput.value) || 0,
-		readFileLines: parseInt(readFileLinesInput.value) || 0,
-		retry: retry,
-		commitModel: commitModelInput.value,
-		commitLanguage: commitLanguageInput.value,
-	});
+	postOperation(
+		{
+			type: "saveGlobalConfig",
+			delay: parseInt(delayInput.value) || 0,
+			readFileLines: parseInt(readFileLinesInput.value) || 0,
+			retry: retry,
+			commitModel: commitModelInput.value,
+			commitLanguage: commitLanguageInput.value,
+		},
+		() => undefined,
+		showProviderError
+	);
 });
 
 const handleRefresh = () => {
@@ -116,7 +155,7 @@ document.getElementById("exportConfig").addEventListener("click", () => {
 });
 
 document.getElementById("importConfig").addEventListener("click", () => {
-	vscode.postMessage({ type: "importConfig" });
+	postOperation({ type: "importConfig" }, () => undefined, showProviderError);
 });
 
 // Refresh buttons event listeners
@@ -128,25 +167,44 @@ document.getElementById("refreshModels").addEventListener("click", handleRefresh
 document.getElementById("addProvider").addEventListener("click", () => {
 	// Add new provider row to the table
 	const newRow = document.createElement("tr");
-	newRow.innerHTML = `
-		<td><input type="text" class="provider-input" data-field="provider" placeholder="Provider ID" /></td>
-		<td><input type="text" class="provider-input" data-field="baseUrl" placeholder="Base URL" /></td>
-		<td><input type="password" class="provider-input" data-field="apiKey" placeholder="API Key" /></td>
-		<td>
-			<select class="provider-input" data-field="apiMode">
-				<option value="openai">OpenAI</option>
-				<option value="openai-responses">OpenAI Responses</option>
-				<option value="ollama">Ollama</option>
-				<option value="anthropic">Anthropic</option>
-				<option value="gemini">Gemini</option>
-			</select>
-		</td>
-		<td><textarea class="provider-input" data-field="headers" rows="2" placeholder='{"X-API-Version": "v1"}' style="width: 100%; font-family: monospace; font-size: 12px;"></textarea></td>
-		<td>
-			<button class="save-provider-btn secondary">Save</button>
-			<button class="cancel-provider-btn secondary">Cancel</button>
-		</td>
-	`;
+	for (const input of [
+		createProviderInput("input", "provider", "", { type: "text", placeholder: "Provider ID" }),
+		createProviderInput("input", "baseUrl", "", { type: "text", placeholder: "Base URL" }),
+		createProviderInput("input", "apiKey", "", { type: "password", placeholder: "API Key" }),
+	]) {
+		const cell = document.createElement("td");
+		cell.appendChild(input);
+		newRow.appendChild(cell);
+	}
+	const modeCell = document.createElement("td");
+	const mode = createProviderInput("select", "apiMode", "openai");
+	for (const [value, label] of [
+		["openai", "OpenAI"],
+		["openai-responses", "OpenAI Responses"],
+		["ollama", "Ollama"],
+		["anthropic", "Anthropic"],
+		["gemini", "Gemini"],
+	]) {
+		mode.appendChild(new Option(label, value));
+	}
+	modeCell.appendChild(mode);
+	newRow.appendChild(modeCell);
+	const headersCell = document.createElement("td");
+	headersCell.appendChild(
+		createProviderInput("textarea", "headers", "", { rows: 2, placeholder: '{"X-API-Version": "v1"}' })
+	);
+	newRow.appendChild(headersCell);
+	const actions = document.createElement("td");
+	for (const [className, label] of [
+		["save-provider-btn secondary", "Save"],
+		["cancel-provider-btn secondary", "Cancel"],
+	]) {
+		const button = document.createElement("button");
+		button.className = className;
+		button.textContent = label;
+		actions.appendChild(button);
+	}
+	newRow.appendChild(actions);
 	providerTableBody.appendChild(newRow);
 
 	// Add event listeners for the new row
@@ -154,6 +212,7 @@ document.getElementById("addProvider").addEventListener("click", () => {
 	const cancelBtn = newRow.querySelector(".cancel-provider-btn");
 
 	saveBtn.addEventListener("click", () => {
+		showProviderError("");
 		const inputs = newRow.querySelectorAll(".provider-input");
 		const providerData = {};
 		inputs.forEach((input) => {
@@ -161,25 +220,28 @@ document.getElementById("addProvider").addEventListener("click", () => {
 			providerData[field] = input.value;
 		});
 
-		let headers = undefined;
-		if (providerData.headers && providerData.headers.trim()) {
-			try {
-				headers = JSON.parse(providerData.headers);
-			} catch (e) {
-				// ignore invalid JSON
-			}
+		if (!providerData.provider.trim()) {
+			showProviderError("Provider ID is required.");
+			return;
+		}
+		const parsedHeaders = parseJsonObject(providerData.headers, "Custom Headers");
+		if (!parsedHeaders.ok) {
+			showProviderError(parsedHeaders.error);
+			return;
 		}
 
-		vscode.postMessage({
-			type: "addProvider",
-			provider: providerData.provider,
-			baseUrl: providerData.baseUrl || undefined,
-			apiKey: providerData.apiKey || undefined,
-			apiMode: providerData.apiMode || undefined,
-			headers: headers,
-		});
-
-		newRow.remove();
+		postOperation(
+			{
+				type: "addProvider",
+				provider: providerData.provider,
+				baseUrl: providerData.baseUrl || undefined,
+				apiKey: providerData.apiKey || undefined,
+				apiMode: providerData.apiMode || undefined,
+				headers: parsedHeaders.value,
+			},
+			() => newRow.remove(),
+			showProviderError
+		);
 	});
 
 	cancelBtn.addEventListener("click", () => {
@@ -196,25 +258,15 @@ document.getElementById("addModel").addEventListener("click", () => {
 	resetModelForm();
 });
 
-// Provider dropdown change event listener for auto-fill
+// Provider dropdown change listener. Connection fields stay empty unless the
+// user explicitly creates a model-level override.
 modelProviderInput.addEventListener("change", () => {
 	const selectedProvider = modelProviderInput.value;
 	if (selectedProvider && state.providerInfo[selectedProvider]) {
-		// Auto-fill BaseURL and apiMode from provider info
-		modelBaseUrlInput.value = state.providerInfo[selectedProvider].baseUrl;
-		modelApiModeInput.value = state.providerInfo[selectedProvider].apiMode;
-
-		// Use headers from provider info
-		const headers = state.providerInfo[selectedProvider].headers;
-		modelHeadersInput.value = headers ? JSON.stringify(headers, null, 2) : "";
-
 		// Request to fetch remote models for the selected provider
 		vscode.postMessage({
 			type: "fetchModels",
-			baseUrl: state.providerInfo[selectedProvider].baseUrl || state.baseUrl,
-			apiKey: state.providerKeys[selectedProvider] || state.apiKey,
-			apiMode: state.providerInfo[selectedProvider].apiMode || modelApiModeInput.value || "openai",
-			headers,
+			provider: selectedProvider,
 		});
 	}
 });
@@ -228,7 +280,12 @@ toggleAdvancedSettingsBtn.addEventListener("click", () => {
 
 // Save Model button event listener
 saveModelBtn.addEventListener("click", () => {
-	const modelData = collectModelFormData();
+	const collected = collectModelFormData();
+	if (!collected.ok) {
+		showModelError(collected.error);
+		return;
+	}
+	const modelData = collected.value;
 	if (!validateModelData(modelData)) {
 		return;
 	}
@@ -237,28 +294,30 @@ saveModelBtn.addEventListener("click", () => {
 	const isEditing = modelIdInput.hasAttribute("data-editing");
 	if (isEditing) {
 		// Remove helper attributes from the model data before sending
+		let originalProvider = modelData.originalProvider;
 		let originalModelId = modelData.originalModelId;
-		let originalConfigId = modelData.originalConfigId;
+		delete modelData.originalProvider;
 		delete modelData.originalModelId;
-		delete modelData.originalConfigId;
 
-		vscode.postMessage({
-			type: "updateModel",
-			model: modelData,
-			originalModelId: originalModelId,
-			originalConfigId: originalConfigId,
-		});
+		postOperation(
+			{
+				type: "updateModel",
+				model: modelData,
+				originalProvider: originalProvider,
+				originalModelId: originalModelId,
+			},
+			closeModelForm,
+			showModelError
+		);
 	} else {
-		vscode.postMessage({
-			type: "addModel",
-			model: modelData,
-		});
+		postOperation({ type: "addModel", model: modelData }, closeModelForm, showModelError);
 	}
+});
 
-	// Hide the form and reset it
+function closeModelForm() {
 	modelFormSection.style.display = "none";
 	resetModelForm();
-});
+}
 
 // Cancel Model button event listener
 cancelModelBtn.addEventListener("click", () => {
@@ -272,10 +331,7 @@ window.addEventListener("message", (event) => {
 
 	switch (message.type) {
 		case "init":
-			const { baseUrl, apiKey, delay, readFileLines, retry, commitModel, models, providerKeys, commitLanguage } =
-				message.payload;
-			state.baseUrl = baseUrl;
-			state.apiKey = apiKey;
+			const { delay, readFileLines, retry, commitModel, models, providerKeys, commitLanguage } = message.payload;
 			state.delay = delay || 0;
 			state.readFileLines = readFileLines || 0;
 			state.retry = retry || {
@@ -288,9 +344,6 @@ window.addEventListener("message", (event) => {
 			state.commitModel = commitModel || "";
 			state.providerKeys = providerKeys || {};
 
-			// Update base configuration
-			baseUrlInput.value = baseUrl || "";
-			apiKeyInput.value = apiKey || "";
 			delayInput.value = state.delay;
 			readFileLinesInput.value = message.payload.readFileLines || 0;
 			retryEnabledInput.checked = state.retry.enabled !== false;
@@ -298,14 +351,14 @@ window.addEventListener("message", (event) => {
 			intervalMsInput.value = state.retry.interval_ms || 1000;
 			statusCodesInput.value = state.retry.status_codes ? state.retry.status_codes.join(",") : "";
 
-			// Populate commit model dropdown and select current commit model
-			populateCommitModelDropdown();
-			commitModelInput.value = state.commitModel || "";
-			commitLanguageInput.value = commitLanguage;
-
 			// Render provider and model management
 			renderProviders();
 			renderModels();
+
+			// Populate after providerInfo is available so inherited API modes are resolved.
+			populateCommitModelDropdown();
+			commitModelInput.value = state.commitModel || "";
+			commitLanguageInput.value = commitLanguage;
 			break;
 		case "modelsFetched":
 			// Handle the response from fetchModels
@@ -314,9 +367,26 @@ window.addEventListener("message", (event) => {
 		case "modelsFetchError":
 			// Handle error from fetchModels
 			dropdownHeader.textContent = "Error fetching models";
-			dropdownContent.innerHTML = `<div class="dropdown-option error">Failed to fetch models. Check the Developer Console for details.</div>`;
+			dropdownContent.replaceChildren();
+			const fetchError = document.createElement("div");
+			fetchError.className = "dropdown-option error";
+			fetchError.textContent = "Failed to fetch models. Check the Developer Console for details.";
+			dropdownContent.appendChild(fetchError);
 			console.error("[oaicopilot] Failed to fetch models:", message.error);
 			break;
+		case "operationResult": {
+			const pending = pendingOperations.get(message.requestId);
+			if (pending) {
+				pendingOperations.delete(message.requestId);
+				clearTimeout(pending.timeout);
+				if (message.success) {
+					pending.onSuccess?.();
+				} else {
+					pending.onError?.(message.error || "The operation failed.");
+				}
+			}
+			break;
+		}
 		case "confirmResponse":
 			// Handle confirmation responses
 			const pendingAction = pendingConfirmations.get(message.id);
@@ -341,64 +411,27 @@ function renderProviders() {
 	);
 
 	if (!providers.length) {
-		providerTableBody.innerHTML = '<tr><td colspan="6" class="no-data">No providers</td></tr>';
+		providerTableBody.replaceChildren(createNoDataRow(6, "No providers"));
 		// Clear the provider dropdown as well
-		modelProviderInput.innerHTML = '<option value="">Select Provider</option>';
+		modelProviderInput.replaceChildren(new Option("Select Provider", ""));
 		return;
 	}
 
-	const rows = providers
-		.map((provider) => {
-			// Get the provider's configuration information
-			const providerModels = state.models.filter((m) => m.owned_by === provider);
-			const firstModel = providerModels[0];
-			const headersJson = firstModel.headers ? JSON.stringify(firstModel.headers, null, 2) : "";
-
-			return `
-			<tr data-provider="${provider}">
-				<td>${provider}</td>
-				<td><input type="text" class="provider-input" data-field="baseUrl" value="${firstModel.baseUrl || ""}" placeholder="Base URL" /></td>
-				<td><input type="password" class="provider-input" data-field="apiKey" value="${state.providerKeys[provider] || ""}" placeholder="API Key" /></td>
-				<td>
-					<select class="provider-input" data-field="apiMode">
-						<option value="openai" ${firstModel.apiMode === "openai" ? "selected" : ""}>OpenAI</option>
-						<option value="openai-responses" ${firstModel.apiMode === "openai-responses" ? "selected" : ""}>OpenAI Responses</option>
-						<option value="ollama" ${firstModel.apiMode === "ollama" ? "selected" : ""}>Ollama</option>
-						<option value="anthropic" ${firstModel.apiMode === "anthropic" ? "selected" : ""}>Anthropic</option>
-						<option value="gemini" ${firstModel.apiMode === "gemini" ? "selected" : ""}>Gemini</option>
-					</select>
-				</td>
-				<td><textarea class="provider-input" data-field="headers" rows="2" placeholder='{"X-API-Version": "v1"}' style="width: 100%; font-family: monospace; font-size: 12px;">${headersJson}</textarea></td>
-				<td class="action-buttons">
-					<button class="update-provider-btn" data-provider="${provider}">Save</button>
-					<button class="delete-provider-btn danger" data-provider="${provider}">Delete</button>
-				</td>
-			</tr>`;
-		})
-		.join("");
-
-	providerTableBody.innerHTML = rows;
+	providerTableBody.replaceChildren(...providers.map(createProviderRow));
 
 	// Populate the provider dropdown in the model form and provider info
 	state.providerInfo = {}; // Reset provider info
-	const providerOptions = providers
-		.map((provider) => {
-			// Get the provider's configuration information
-			const providerModels = state.models.filter((m) => m.owned_by === provider);
-			const firstModel = providerModels[0];
-
-			// Store provider info for auto-fill
-			state.providerInfo[provider] = {
-				baseUrl: firstModel.baseUrl || state.baseUrl,
-				apiMode: firstModel.apiMode || "openai",
-				apiKey: state.providerKeys[provider] || state.apiKey,
-				headers: firstModel.headers,
-			};
-
-			return `<option value="${provider}">${provider}</option>`;
-		})
-		.join("");
-	modelProviderInput.innerHTML = '<option value="">Select Provider</option>' + providerOptions;
+	const providerOptions = providers.map((provider) => {
+		const providerModels = state.models.filter((m) => m.owned_by === provider);
+		const providerConfig = providerModels.find((m) => m.providerConfig === true);
+		state.providerInfo[provider] = {
+			baseUrl: providerConfig?.baseUrl || "",
+			apiMode: providerConfig?.apiMode || "openai",
+			headers: providerConfig?.headers,
+		};
+		return new Option(provider, provider);
+	});
+	modelProviderInput.replaceChildren(new Option("Select Provider", ""), ...providerOptions);
 
 	// Add event listeners for provider rows
 	document.querySelectorAll(".update-provider-btn").forEach((btn) => {
@@ -412,23 +445,24 @@ function renderProviders() {
 				providerData[field] = input.value;
 			});
 
-			let headers = undefined;
-			if (providerData.headers && providerData.headers.trim()) {
-				try {
-					headers = JSON.parse(providerData.headers);
-				} catch (e) {
-					// ignore invalid JSON
-				}
+			const parsedHeaders = parseJsonObject(providerData.headers, "Custom Headers");
+			if (!parsedHeaders.ok) {
+				showProviderError(parsedHeaders.error);
+				return;
 			}
 
-			vscode.postMessage({
-				type: "updateProvider",
-				provider: provider,
-				baseUrl: providerData.baseUrl || undefined,
-				apiKey: providerData.apiKey || undefined,
-				apiMode: providerData.apiMode || undefined,
-				headers: headers,
-			});
+			postOperation(
+				{
+					type: "updateProvider",
+					provider: provider,
+					baseUrl: providerData.baseUrl || undefined,
+					apiKey: providerData.apiKey || undefined,
+					apiMode: providerData.apiMode || undefined,
+					headers: parsedHeaders.value,
+				},
+				() => showProviderError(""),
+				showProviderError
+			);
 		});
 	});
 
@@ -439,7 +473,7 @@ function renderProviders() {
 
 			// Store the action to be performed after confirmation
 			pendingConfirmations.set(confirmId, {
-				action: () => vscode.postMessage({ type: "deleteProvider", provider: provider }),
+				action: () => postOperation({ type: "deleteProvider", provider }, () => undefined, showProviderError),
 			});
 
 			vscode.postMessage({
@@ -450,59 +484,147 @@ function renderProviders() {
 			});
 		});
 	});
+
+	document.querySelectorAll(".clear-provider-key-btn").forEach((btn) => {
+		btn.addEventListener("click", (event) => {
+			const provider = event.target.getAttribute("data-provider");
+			const confirmId = "clearProviderApiKey_" + Date.now();
+			pendingConfirmations.set(confirmId, {
+				action: () =>
+					postOperation({ type: "clearProviderApiKey", provider }, () => showProviderError(""), showProviderError),
+			});
+			vscode.postMessage({
+				type: "requestConfirm",
+				id: confirmId,
+				message: `Clear the stored API key for ${provider}?`,
+				action: "clearProviderApiKey",
+			});
+		});
+	});
+}
+
+function createNoDataRow(columnCount, message) {
+	const row = document.createElement("tr");
+	const cell = document.createElement("td");
+	cell.colSpan = columnCount;
+	cell.className = "no-data";
+	cell.textContent = message;
+	row.appendChild(cell);
+	return row;
+}
+
+function createCell(value = "") {
+	const cell = document.createElement("td");
+	cell.textContent = String(value);
+	return cell;
+}
+
+function createProviderInput(tagName, field, value, attributes = {}) {
+	const input = document.createElement(tagName);
+	input.className = "provider-input";
+	input.dataset.field = field;
+	input.value = value || "";
+	for (const [key, attributeValue] of Object.entries(attributes)) {
+		input[key] = attributeValue;
+	}
+	return input;
+}
+
+function createProviderRow(provider) {
+	const providerModels = state.models.filter((m) => m.owned_by === provider);
+	const providerConfig = providerModels.find((m) => m.providerConfig === true) || {};
+	const row = document.createElement("tr");
+	row.dataset.provider = provider;
+	row.appendChild(createCell(provider));
+
+	const baseUrlCell = document.createElement("td");
+	baseUrlCell.appendChild(
+		createProviderInput("input", "baseUrl", providerConfig.baseUrl, { type: "text", placeholder: "Base URL" })
+	);
+	row.appendChild(baseUrlCell);
+
+	const apiKeyCell = document.createElement("td");
+	const apiKeyInput = createProviderInput("input", "apiKey", "", {
+		type: "password",
+		placeholder: state.providerKeys[provider] ? "API key saved — leave blank to keep" : "Enter API key",
+	});
+	apiKeyCell.appendChild(apiKeyInput);
+	if (state.providerKeys[provider]) {
+		const saved = document.createElement("div");
+		saved.className = "field-description";
+		saved.textContent = "A key is stored securely.";
+		apiKeyCell.appendChild(saved);
+	}
+	row.appendChild(apiKeyCell);
+
+	const modeCell = document.createElement("td");
+	const select = createProviderInput("select", "apiMode", providerConfig.apiMode || "openai");
+	for (const [value, label] of [
+		["openai", "OpenAI"],
+		["openai-responses", "OpenAI Responses"],
+		["ollama", "Ollama"],
+		["anthropic", "Anthropic"],
+		["gemini", "Gemini"],
+	]) {
+		select.appendChild(new Option(label, value, false, value === (providerConfig.apiMode || "openai")));
+	}
+	modeCell.appendChild(select);
+	row.appendChild(modeCell);
+
+	const headersCell = document.createElement("td");
+	headersCell.appendChild(
+		createProviderInput(
+			"textarea",
+			"headers",
+			providerConfig.headers ? JSON.stringify(providerConfig.headers, null, 2) : "",
+			{
+				rows: 2,
+				placeholder: '{"X-API-Version": "v1"}',
+			}
+		)
+	);
+	row.appendChild(headersCell);
+
+	const actions = document.createElement("td");
+	actions.className = "action-buttons";
+	for (const [className, label] of [
+		["update-provider-btn", "Save"],
+		["clear-provider-key-btn secondary", "Clear Key"],
+		["delete-provider-btn danger", "Delete"],
+	]) {
+		const button = document.createElement("button");
+		button.className = className;
+		button.dataset.provider = provider;
+		button.textContent = label;
+		if (label === "Clear Key" && !state.providerKeys[provider]) {
+			button.disabled = true;
+		}
+		actions.appendChild(button);
+	}
+	row.appendChild(actions);
+	return row;
 }
 
 function renderModels() {
-	const models = state.models.filter((m) => !m.id.startsWith("__provider__")).sort((a, b) => a.id.localeCompare(b.id));
+	const models = state.models.filter((m) => m.providerConfig !== true).sort((a, b) => a.id.localeCompare(b.id));
 	if (!models.length) {
-		modelTableBody.innerHTML = '<tr><td colspan="11" class="no-data">No models</td></tr>';
+		modelTableBody.replaceChildren(createNoDataRow(11, "No models"));
 		return;
 	}
 
-	const rows = models
-		.map((model) => {
-			return `
-			<tr data-model-id="${model.id}${model.configId ? "::" + model.configId : ""}">
-				<td>${model.id}</td>
-				<td>${model.owned_by}</td>
-				<td>${model.displayName || ""}</td>
-				<td>${model.configId || ""}</td>
-				<td>${model.context_length || ""}</td>
-				<td>${model.max_tokens || model.max_completion_tokens || ""}</td>
-				<td>${model.vision ? "True" : ""}</td>
-				<td>${model.temperature !== undefined && model.temperature !== null ? model.temperature : ""}</td>
-				<td>${model.top_p !== undefined && model.top_p !== null ? model.top_p : ""}</td>
-				<td>${model.delay || ""}</td>
-				<td class="action-buttons">
-					<button class="update-model-btn" data-model-id="${model.id}${model.configId ? "::" + model.configId : ""}">Edit</button>
-					<button class="delete-model-btn danger" data-model-id="${model.id}${model.configId ? "::" + model.configId : ""}">Delete</button>
-				</td>
-			</tr>`;
-		})
-		.join("");
-
-	modelTableBody.innerHTML = rows;
+	modelTableBody.replaceChildren(...models.map(createModelRow));
 
 	// Add event listeners for model rows
 	document.querySelectorAll(".update-model-btn").forEach((btn) => {
 		btn.addEventListener("click", (event) => {
+			const provider = event.target.getAttribute("data-provider");
 			const modelId = event.target.getAttribute("data-model-id");
-			// Find the model in state
-			const parsedModelId = modelId.includes("::")
-				? { baseId: modelId.split("::")[0], configId: modelId.split("::")[1] }
-				: { baseId: modelId, configId: null };
-
-			const model = state.models.find(
-				(m) =>
-					m.id === parsedModelId.baseId &&
-					((parsedModelId.configId && m.configId === parsedModelId.configId) ||
-						(!parsedModelId.configId && !m.configId))
-			);
+			const model = state.models.find((m) => m.owned_by === provider && m.id === modelId);
 
 			if (model) {
 				// Show the model form in edit mode
 				modelFormSection.style.display = "block";
-				modelFormTitle.textContent = `Edit Model: ${modelId}`;
+				modelFormTitle.textContent = `Edit Model: ${provider} / ${modelId}`;
 				populateModelForm(model);
 			}
 		});
@@ -510,22 +632,58 @@ function renderModels() {
 
 	document.querySelectorAll(".delete-model-btn").forEach((btn) => {
 		btn.addEventListener("click", (event) => {
+			const provider = event.target.getAttribute("data-provider");
 			const modelId = event.target.getAttribute("data-model-id");
 			const confirmId = "deleteModel_" + Date.now();
 
 			// Store the action to be performed after confirmation
 			pendingConfirmations.set(confirmId, {
-				action: () => vscode.postMessage({ type: "deleteModel", modelId: modelId }),
+				action: () => postOperation({ type: "deleteModel", provider, modelId }, () => undefined, showModelError),
 			});
 
 			vscode.postMessage({
 				type: "requestConfirm",
 				id: confirmId,
-				message: `Are you sure you want to delete model ${modelId}?`,
+				message: `Are you sure you want to delete model ${provider} / ${modelId}?`,
 				action: "deleteModel",
 			});
 		});
 	});
+}
+
+function createModelRow(model) {
+	const row = document.createElement("tr");
+	row.dataset.provider = model.owned_by;
+	row.dataset.modelId = model.id;
+	for (const value of [
+		model.id,
+		model.owned_by,
+		model.displayName || "",
+		model.configId || "",
+		model.context_length || "",
+		model.max_tokens || model.max_completion_tokens || "",
+		model.vision ? "True" : "",
+		model.temperature !== undefined && model.temperature !== null ? model.temperature : "",
+		model.top_p !== undefined && model.top_p !== null ? model.top_p : "",
+		model.delay || "",
+	]) {
+		row.appendChild(createCell(value));
+	}
+	const actions = document.createElement("td");
+	actions.className = "action-buttons";
+	for (const [className, label] of [
+		["update-model-btn", "Edit"],
+		["delete-model-btn danger", "Delete"],
+	]) {
+		const button = document.createElement("button");
+		button.className = className;
+		button.dataset.provider = model.owned_by;
+		button.dataset.modelId = model.id;
+		button.textContent = label;
+		actions.appendChild(button);
+	}
+	row.appendChild(actions);
+	return row;
 }
 
 // Reset model form
@@ -542,7 +700,7 @@ function resetModelForm() {
 	modelContextLengthInput.value = 128000;
 	modelMaxTokensInput.value = 4096;
 	modelVisionInput.value = "";
-	modelApiModeInput.value = "openai";
+	modelApiModeInput.value = "";
 	modelTemperatureInput.value = 0;
 	modelTopPInput.value = "";
 	modelDelayInput.value = "";
@@ -567,11 +725,8 @@ function resetModelForm() {
 	toggleAdvancedSettingsBtn.textContent = "Show Advanced Settings";
 	// Remove editing attribute
 	modelIdInput.removeAttribute("data-editing");
+	modelIdInput.removeAttribute("data-original-provider");
 	modelIdInput.removeAttribute("data-original-id");
-	modelIdInput.removeAttribute("data-original-configId");
-	// disbale fields when form is reset
-	modelBaseUrlInput.disabled = true;
-	modelApiModeInput.disabled = true;
 	// Clear dropdown options
 	dropdownContent.innerHTML = "";
 }
@@ -579,47 +734,59 @@ function resetModelForm() {
 // Collect model form data
 function collectModelFormData() {
 	const isEditing = modelIdInput.hasAttribute("data-editing");
+	const headers = parseJsonObject(modelHeadersInput.value, "Custom Headers");
+	if (!headers.ok) {
+		return headers;
+	}
+	const extra = parseJsonObject(modelExtraInput.value, "Extra Parameters");
+	if (!extra.ok) {
+		return extra;
+	}
 
 	return {
-		id: modelIdInput.value.trim(),
-		owned_by: modelProviderInput.value.trim(),
-		displayName: modelDisplayNameInput.value.trim() || undefined,
-		configId: modelConfigIdInput.value.trim() || undefined,
-		baseUrl: modelBaseUrlInput.value.trim() || undefined,
-		family: modelFamilyInput.value.trim() || undefined,
-		context_length: modelContextLengthInput.value ? parseInt(modelContextLengthInput.value) : undefined,
-		max_tokens: modelMaxTokensInput.value ? parseInt(modelMaxTokensInput.value) : undefined,
-		vision: modelVisionInput.value ? modelVisionInput.value === "true" : undefined,
-		apiMode: modelApiModeInput.value || undefined,
-		temperature: modelTemperatureInput.value !== "" ? parseFloat(modelTemperatureInput.value) : undefined,
-		top_p: modelTopPInput.value !== "" ? parseFloat(modelTopPInput.value) : undefined,
-		delay: modelDelayInput.value ? parseInt(modelDelayInput.value) : undefined,
-		top_k: modelTopKInput.value ? parseInt(modelTopKInput.value) : undefined,
-		min_p: modelMinPInput.value !== "" ? parseFloat(modelMinPInput.value) : undefined,
-		frequency_penalty:
-			modelFrequencyPenaltyInput.value !== "" ? parseFloat(modelFrequencyPenaltyInput.value) : undefined,
-		presence_penalty: modelPresencePenaltyInput.value !== "" ? parseFloat(modelPresencePenaltyInput.value) : undefined,
-		repetition_penalty:
-			modelRepetitionPenaltyInput.value !== "" ? parseFloat(modelRepetitionPenaltyInput.value) : undefined,
-		reasoning_effort: modelReasoningEffortInput.value || undefined,
-		enable_thinking: modelEnableThinkingInput.value ? modelEnableThinkingInput.value === "true" : undefined,
-		thinking_budget: modelThinkingBudgetInput.value ? parseInt(modelThinkingBudgetInput.value) : undefined,
-		include_reasoning_in_request: modelIncludeReasoningInput.value
-			? modelIncludeReasoningInput.value === "true"
-			: undefined,
-		max_completion_tokens: modelMaxCompletionTokensInput.value
-			? parseInt(modelMaxCompletionTokensInput.value)
-			: undefined,
-		// Build reasoning configuration object
-		reasoning: buildReasoningConfig(),
-		// Build thinking configuration object
-		thinking: buildThinkingConfig(),
-		// Parse headers and extra JSON
-		headers: parseJsonField(modelHeadersInput.value),
-		extra: parseJsonField(modelExtraInput.value),
-		// Include original modelId and configId for update operations
-		originalModelId: isEditing ? modelIdInput.getAttribute("data-original-id") : undefined,
-		originalConfigId: isEditing ? modelIdInput.getAttribute("data-original-configId") : undefined,
+		ok: true,
+		value: {
+			id: modelIdInput.value.trim(),
+			owned_by: modelProviderInput.value.trim(),
+			displayName: modelDisplayNameInput.value.normalize("NFKC").trim(),
+			configId: modelConfigIdInput.value.trim() || undefined,
+			baseUrl: modelBaseUrlInput.value.trim() || undefined,
+			family: modelFamilyInput.value.trim() || undefined,
+			context_length: modelContextLengthInput.value ? parseInt(modelContextLengthInput.value) : undefined,
+			max_tokens: modelMaxTokensInput.value ? parseInt(modelMaxTokensInput.value) : undefined,
+			vision: modelVisionInput.value ? modelVisionInput.value === "true" : undefined,
+			apiMode: modelApiModeInput.value || undefined,
+			temperature: modelTemperatureInput.value !== "" ? parseFloat(modelTemperatureInput.value) : undefined,
+			top_p: modelTopPInput.value !== "" ? parseFloat(modelTopPInput.value) : undefined,
+			delay: modelDelayInput.value ? parseInt(modelDelayInput.value) : undefined,
+			top_k: modelTopKInput.value ? parseInt(modelTopKInput.value) : undefined,
+			min_p: modelMinPInput.value !== "" ? parseFloat(modelMinPInput.value) : undefined,
+			frequency_penalty:
+				modelFrequencyPenaltyInput.value !== "" ? parseFloat(modelFrequencyPenaltyInput.value) : undefined,
+			presence_penalty:
+				modelPresencePenaltyInput.value !== "" ? parseFloat(modelPresencePenaltyInput.value) : undefined,
+			repetition_penalty:
+				modelRepetitionPenaltyInput.value !== "" ? parseFloat(modelRepetitionPenaltyInput.value) : undefined,
+			reasoning_effort: modelReasoningEffortInput.value || undefined,
+			enable_thinking: modelEnableThinkingInput.value ? modelEnableThinkingInput.value === "true" : undefined,
+			thinking_budget: modelThinkingBudgetInput.value ? parseInt(modelThinkingBudgetInput.value) : undefined,
+			include_reasoning_in_request: modelIncludeReasoningInput.value
+				? modelIncludeReasoningInput.value === "true"
+				: undefined,
+			max_completion_tokens: modelMaxCompletionTokensInput.value
+				? parseInt(modelMaxCompletionTokensInput.value)
+				: undefined,
+			// Build reasoning configuration object
+			reasoning: buildReasoningConfig(),
+			// Build thinking configuration object
+			thinking: buildThinkingConfig(),
+			// Parse headers and extra JSON
+			headers: headers.value,
+			extra: extra.value,
+			// Include original modelId and configId for update operations
+			originalProvider: isEditing ? modelIdInput.getAttribute("data-original-provider") : undefined,
+			originalModelId: isEditing ? modelIdInput.getAttribute("data-original-id") : undefined,
+		},
 	};
 }
 
@@ -652,19 +819,6 @@ function buildThinkingConfig() {
 	return undefined;
 }
 
-// Parse JSON field, return undefined if empty or invalid
-function parseJsonField(value) {
-	if (!value || value.trim() === "") {
-		return undefined;
-	}
-	try {
-		return JSON.parse(value.trim());
-	} catch (error) {
-		// ignore invalid JSON
-		return undefined;
-	}
-}
-
 // Show error message in the UI
 function showModelError(message) {
 	if (modelErrorElement) {
@@ -687,37 +841,60 @@ function validateModelData(modelData) {
 		showModelError("Model ID is required.");
 		return false;
 	}
+	if (modelData.id.startsWith("__provider__")) {
+		showModelError('Model IDs beginning with "__provider__" are reserved for internal provider metadata.');
+		return false;
+	}
 	if (!modelData.owned_by) {
 		showModelError("Provider ID is required.");
 		return false;
 	}
+	if (!modelData.displayName) {
+		showModelError("Display Name is required.");
+		return false;
+	}
 
-	// Validate modelId and configId Uniqueness
+	// Model ID is unique within a canonical provider. Config ID is descriptive only.
 	const isEditing = modelIdInput.hasAttribute("data-editing");
 	const hasDuplicate = state.models
 		.filter((m) => {
 			if (isEditing) {
 				const isOrigin =
-					m.id === modelData.originalModelId &&
-					((modelData.originalConfigId && m.configId === modelData.originalConfigId) ||
-						(!modelData.originalConfigId && !m.configId));
+					m.owned_by.toLowerCase() === modelData.originalProvider.toLowerCase() && m.id === modelData.originalModelId;
 				return !isOrigin;
 			}
 			return true;
 		})
 		.some((m) => {
-			return (
-				m.id === modelData.id &&
-				((modelData.configId && m.configId === modelData.configId) || (!modelData.configId && !m.configId))
-			);
+			return m.owned_by.toLowerCase() === modelData.owned_by.toLowerCase() && m.id === modelData.id;
 		});
 
 	if (hasDuplicate) {
 		showModelError(
-			`A model with ID="${modelData.id}"${
-				modelData.configId ? ` and Config ID="${modelData.configId}"` : ""
-			} already exists. Model ID and Config ID combination must be unique.`
+			`Model ID "${modelData.id}" already exists for provider "${modelData.owned_by}". Provider and Model ID must be unique.`
 		);
+		return false;
+	}
+
+	const normalizedDisplayName = modelData.displayName.normalize("NFKC").trim().toLowerCase();
+	const hasDuplicateDisplayName = state.models
+		.filter((m) => m.providerConfig !== true)
+		.filter((m) => {
+			if (!isEditing) {
+				return true;
+			}
+			return !(
+				m.owned_by.toLowerCase() === modelData.originalProvider.toLowerCase() && m.id === modelData.originalModelId
+			);
+		})
+		.some(
+			(m) =>
+				typeof m.displayName === "string" &&
+				m.displayName.normalize("NFKC").trim().toLowerCase() === normalizedDisplayName
+		);
+
+	if (hasDuplicateDisplayName) {
+		showModelError(`Display Name "${modelData.displayName}" is already used. Display Names must be globally unique.`);
 		return false;
 	}
 
@@ -820,17 +997,16 @@ function populateCommitModelDropdown() {
 	// Filter models that support commit generation (openai, openai-responses, anthropic, ollama apiMode)
 	const commitCompatibleModels = state.models
 		.filter((model) => {
-			const apiMode = model.apiMode || "openai";
-			return apiMode !== "gemini" && !model.id.startsWith("__provider__");
+			const apiMode = model.apiMode || state.providerInfo[model.owned_by]?.apiMode || "openai";
+			return apiMode !== "gemini" && model.providerConfig !== true;
 		})
 		.sort((a, b) => a.id.localeCompare(b.id));
 
 	// Add options for compatible models
 	commitCompatibleModels.forEach((model) => {
 		const option = document.createElement("option");
-		const fullModelId = `${model.id}${model.configId ? "::" + model.configId : ""}`;
-		option.value = fullModelId;
-		option.textContent = model.displayName || fullModelId;
+		option.value = JSON.stringify([model.owned_by.toLowerCase(), model.id]);
+		option.textContent = model.displayName;
 		commitModelInput.appendChild(option);
 	});
 }
@@ -859,9 +1035,9 @@ function populateModelForm(model) {
 	// Clear any error message
 	showModelError("");
 
-	// Store the original modelId and configId for update operations
+	// Store the original provider/model identity for update operations
+	modelIdInput.setAttribute("data-original-provider", model.owned_by || "");
 	modelIdInput.setAttribute("data-original-id", model.id || "");
-	modelIdInput.setAttribute("data-original-configId", model.configId || "");
 
 	modelIdInput.value = model.id || "";
 
@@ -877,18 +1053,10 @@ function populateModelForm(model) {
 		modelProviderInput.appendChild(newOption);
 	}
 
-	const providerInfo = state.providerInfo[currentProvider];
-	const fetchBaseUrl = model.baseUrl || state.baseUrl;
-	const fetchApiKey = state.providerKeys[currentProvider] || state.apiKey;
-	const fetchApiMode = providerInfo?.apiMode || model.apiMode || modelApiModeInput.value || "openai";
-
 	// Request to fetch remote models for the selected provider
 	vscode.postMessage({
 		type: "fetchModels",
-		baseUrl: fetchBaseUrl,
-		apiKey: fetchApiKey,
-		apiMode: fetchApiMode,
-		headers: model.headers,
+		provider: currentProvider,
 	});
 
 	modelProviderInput.value = currentProvider;
@@ -899,7 +1067,7 @@ function populateModelForm(model) {
 	modelContextLengthInput.value = model.context_length || "";
 	modelMaxTokensInput.value = model.max_tokens || "";
 	modelVisionInput.value = model.vision !== undefined ? String(model.vision) : "";
-	modelApiModeInput.value = model.apiMode || "openai";
+	modelApiModeInput.value = model.apiMode || "";
 	modelTemperatureInput.value = model.temperature !== undefined && model.temperature !== null ? model.temperature : "";
 	modelTopPInput.value = model.top_p !== undefined && model.top_p !== null ? model.top_p : "";
 	modelDelayInput.value = model.delay || "";
@@ -930,9 +1098,6 @@ function populateModelForm(model) {
 	modelExtraInput.value = model.extra ? JSON.stringify(model.extra, null, 2) : "";
 	// Mark that we're in editing mode by setting an attribute
 	modelIdInput.setAttribute("data-editing", "true");
-	// Disable BaseURL and apiMode fields when editing
-	modelBaseUrlInput.disabled = true;
-	modelApiModeInput.disabled = true;
 }
 
 // Initialize dropdown event listeners

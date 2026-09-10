@@ -19,16 +19,6 @@
 			</div>
 			<div class="row">
 				<div class="field">
-					<label for="baseUrl">Global Base URL</label>
-					<div class="field-description">The base URL for the Openai Compatible Inference API.</div>
-					<input id="baseUrl" type="text" placeholder="https://api.openai.com/v1" />
-				</div>
-				<div class="field">
-					<label for="apiKey">Global API Key</label>
-					<div class="field-description">The API Key for Authentication.</div>
-					<input id="apiKey" type="password" placeholder="sk-..." />
-				</div>
-				<div class="field">
 					<label for="delay">Delay (ms)</label>
 					<div class="field-description">Fixed delay in milliseconds between consecutive requests.</div>
 					<input id="delay" type="number" min="0" placeholder="0" />
@@ -112,6 +102,7 @@
 					<button id="refreshProviders" class="secondary">Refresh</button>
 				</div>
 			</div>
+			<div id="providerError" class="error-message" style="display: none"></div>
 			<div class="table-container">
 				<table id="providerTable">
 					<thead>
@@ -185,11 +176,10 @@
 						<div class="field">
 							<label for="modelApiMode">API Mode</label>
 							<div class="field-description">
-								'openai' for API (/chat/completions), 'openai-responses' for API (/responses), 'ollama' for API
-								(/api/chat), 'anthropic' for API (/v1/messages), 'gemini' for API
-								(/v1beta/models/{model}:streamGenerateContent?alt=sse).
+								Optional model override. Leave "Inherit from Provider" selected to follow future provider changes.
 							</div>
 							<select id="modelApiMode" class="model-input">
+								<option value="">Inherit from Provider</option>
 								<option value="openai">OpenAI</option>
 								<option value="openai-responses">OpenAI Responses</option>
 								<option value="ollama">Ollama</option>
@@ -201,7 +191,7 @@
 					<div class="row">
 						<div class="field">
 							<label for="modelIdInput">Model ID *</label>
-							<div class="field-description">Model ID (e.g., gpt-4, claude-3).</div>
+							<div class="field-description">Unique within the selected provider (e.g., gpt-4, claude-3).</div>
 							<div class="input-with-dropdown">
 								<input id="modelIdInput" type="text" class="model-input" placeholder="e.g., gpt-4, claude-3" required />
 								<div id="modelIdDropdown" class="model-input-dropdown">
@@ -213,17 +203,32 @@
 							</div>
 						</div>
 						<div class="field">
+							<label for="modelDisplayName">Display Name *</label>
+							<div class="field-description">
+								Globally unique name shown in Copilot. Case, whitespace, and Unicode compatibility differences are
+								ignored.
+							</div>
+							<input
+								id="modelDisplayName"
+								type="text"
+								class="model-input"
+								placeholder="e.g., GPT-4 via OpenAI"
+								required
+							/>
+						</div>
+						<div class="field">
 							<label for="modelConfigId">Config ID</label>
 							<div class="field-description">
-								Configuration ID for this model. Allows defining the same model with different settings (e.g.
-								'glm-4.6::thinking', 'glm-4.6::no-thinking').
+								Optional descriptive label. It does not allow duplicate Model IDs within one provider.
 							</div>
 							<input id="modelConfigId" type="text" class="model-input" placeholder="e.g., thinking, no-thinking" />
 						</div>
 						<div class="field">
 							<label for="modelBaseUrl">Base URL</label>
-							<div class="field-description">Base URL for the model provider.</div>
-							<input id="modelBaseUrl" type="text" class="model-input" placeholder="https://api.openai.com/v1" />
+							<div class="field-description">
+								Optional model override. Leave blank to inherit from the selected Provider.
+							</div>
+							<input id="modelBaseUrl" type="text" class="model-input" placeholder="Inherit from Provider" />
 						</div>
 					</div>
 					<div class="row">
@@ -275,13 +280,6 @@
 						<button type="button" id="toggleAdvancedSettings" class="secondary">Show Advanced Settings</button>
 						<div id="advancedSettingsContent" style="display: none; margin-top: 15px">
 							<div class="row">
-								<div class="field">
-									<label for="modelDisplayName">Display Name</label>
-									<div class="field-description">
-										Display name for the model that will be shown in the Copilot interface.
-									</div>
-									<input id="modelDisplayName" type="text" class="model-input" placeholder="e.g., GPT-4 Turbo" />
-								</div>
 								<div class="field">
 									<label for="modelFamily">Model Family</label>
 									<div class="field-description">
@@ -415,7 +413,9 @@
 							<div class="row">
 								<div class="field">
 									<label for="modelHeaders">Custom Headers (JSON)</label>
-									<div class="field-description">Custom HTTP headers to be sent with every request to this model.</div>
+									<div class="field-description">
+										Optional model override. Leave blank to inherit all headers from the selected Provider.
+									</div>
 									<textarea
 										id="modelHeaders"
 										class="model-input"

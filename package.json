@@ -25,7 +25,7 @@
 		"type": "git",
 		"url": "https://github.com/JohnnyZ93/oai-compatible-copilot"
 	},
-	"version": "0.4.2",
+	"version": "0.4.3",
 	"engines": {
 		"vscode": "^1.120.0"
 	},
@@ -52,15 +52,10 @@
 			{
 				"vendor": "oaicopilot",
 				"displayName": "OAI Compatible",
-				"managementCommand": "oaicopilot.setApikey"
+				"managementCommand": "oaicopilot.openConfig"
 			}
 		],
 		"commands": [
-			{
-				"command": "oaicopilot.setApikey",
-				"category": "OAICopilot",
-				"title": "Set OAI Compatible Apikey"
-			},
 			{
 				"command": "oaicopilot.setProviderApikey",
 				"category": "OAICopilot",
@@ -112,27 +107,75 @@
 			"title": "OAI Compatible Copilot",
 			"properties": {
 				"oaicopilot.logLevel": {
-				"type": "string",
-				"default": "off",
-				"enum": [
-					"off",
-					"debug",
-					"info",
-					"warn",
-					"error"
-				],
-				"description": "Debug log level. Logs are written to ~/.copilot/oaicopilot/logs/ as JSON lines. Default is 'off' (no logging)."
-			},
-			"oaicopilot.baseUrl": {
 					"type": "string",
-					"default": "https://router.huggingface.co/v1",
-					"description": "The base URL for the Openai Compatible Inference API. Default value is Hugging Face."
+					"default": "off",
+					"enum": [
+						"off",
+						"debug",
+						"info",
+						"warn",
+						"error"
+					],
+					"description": "Debug log level. Logs are written to ~/.copilot/oaicopilot/logs/ as JSON lines. Default is 'off' (no logging)."
 				},
 				"oaicopilot.models": {
 					"type": "array",
+					"scope": "application",
 					"default": [],
 					"items": {
 						"type": "object",
+						"oneOf": [
+							{
+								"title": "Provider connection metadata",
+								"required": [
+									"id",
+									"owned_by",
+									"providerConfig"
+								],
+								"properties": {
+									"id": {
+										"pattern": "^__provider__"
+									},
+									"providerConfig": {
+										"const": true
+									}
+								}
+							},
+							{
+								"title": "Selectable model",
+								"required": [
+									"id",
+									"displayName"
+								],
+								"not": {
+									"required": [
+										"providerConfig"
+									]
+								},
+								"anyOf": [
+									{
+										"required": [
+											"owned_by"
+										]
+									},
+									{
+										"required": [
+											"provider"
+										]
+									},
+									{
+										"required": [
+											"provide"
+										]
+									}
+								],
+								"properties": {
+									"id": {
+										"pattern": "^(?!__provider__)"
+									}
+								}
+							}
+						],
 						"properties": {
 							"id": {
 								"type": "string",
@@ -140,11 +183,15 @@
 							},
 							"displayName": {
 								"type": "string",
-								"description": "(Optional) Display name for the model that will be shown in the Copilot interface. If not provided, will be generated automatically."
+								"description": "Globally unique display name shown in the Copilot interface. Comparison ignores case, surrounding whitespace, and Unicode compatibility differences."
+							},
+							"providerConfig": {
+								"type": "boolean",
+								"description": "Internal provider connection metadata marker. Configure providers through the OAICopilot Configuration UI."
 							},
 							"configId": {
 								"type": "string",
-								"description": "(Optional) Configuration ID for this model. Allows defining the same model with different settings (e.g. 'glm-4.6::thinking', 'glm-4.6::no-thinking')."
+								"description": "Optional descriptive configuration label. It does not permit duplicate Model IDs within one provider."
 							},
 							"owned_by": {
 								"type": "string",
@@ -164,7 +211,7 @@
 							},
 							"baseUrl": {
 								"type": "string",
-								"description": "Base URL for the model provider. If not provided, the global oaicopilot.baseUrl will be used."
+								"description": "Base URL for the model provider. Configure it through Provider Management."
 							},
 							"context_length": {
 								"type": "number",
@@ -365,26 +412,9 @@
 						},
 						"required": [
 							"id"
-						],
-						"anyOf": [
-							{
-								"required": [
-									"owned_by"
-								]
-							},
-							{
-								"required": [
-									"provider"
-								]
-							},
-							{
-								"required": [
-									"provide"
-								]
-							}
 						]
 					},
-					"description": "A list of preferred models to use. If provided, these models will be used directly instead of fetching from the API."
+					"description": "Configured models. Model ID is unique within a provider; Display Name is globally unique."
 				},
 				"oaicopilot.retry": {
 					"type": "object",
@@ -473,7 +503,7 @@
 		"format": "prettier --write .",
 		"watch": "tsc -watch -p ./",
 		"test": "npm run compile && vscode-test",
-		"build": "npx @vscode/vsce package -o extension.vsix"
+		"build": "vsce package -o extension.vsix"
 	},
 	"dependencies": {
 		"@microsoft/tiktokenizer": "^1.0.10"
@@ -484,9 +514,10 @@
 		"@types/node": "^22",
 		"@types/mocha": "^10.0.6",
 		"@vscode/dts": "^0.4.1",
-		"@types/vscode": "^1.104.0",
+		"@types/vscode": "^1.120.0",
 		"@vscode/test-cli": "^0.0.11",
 		"@vscode/test-electron": "^2.5.2",
+		"@vscode/vsce": "3.6.0",
 		"eslint": "^9.13.0",
 		"prettier": "^3.1.0",
 		"typescript": "^5.9.2",

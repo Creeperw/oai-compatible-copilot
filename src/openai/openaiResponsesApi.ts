@@ -274,6 +274,9 @@ export class OpenaiResponsesApi extends CommonApi<ResponsesInputItem, Record<str
 		// Process extra configuration parameters
 		if (um?.extra && typeof um.extra === "object") {
 			for (const [key, value] of Object.entries(um.extra)) {
+				if (key === "model") {
+					continue;
+				}
 				if (value !== undefined) {
 					// Deep-merge reasoning config so `extra.reasoning` doesn't clobber `reasoning.effort`.
 					if (key === "reasoning" && isPlainObject(value) && isPlainObject(rb.reasoning)) {

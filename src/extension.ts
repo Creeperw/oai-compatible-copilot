@@ -1,16 +1,20 @@
 import * as vscode from "vscode";
 import { HuggingFaceChatModelProvider } from "./provider";
-import type { HFModelItem } from "./types";
 import { initStatusBar } from "./statusBar";
 import { ConfigViewPanel } from "./views/configView";
 import { logger } from "./logger";
-import { normalizeUserModels } from "./utils";
+import { getGlobalUserModels } from "./utils";
+import { assertValidModelCollection, canonicalizeProvider, migrateLegacyModelMetadata } from "./modelIdentity";
 import { abortCommitGeneration, generateCommitMsg } from "./gitCommit/commitMessageGenerator";
 import { TokenizerManager } from "./tokenizer/tokenizerManager";
 
-export function activate(context: vscode.ExtensionContext) {
+const PROVIDER_CONFIG_MIGRATION_KEY = "oaicopilot.providerConfigMigration.v2";
+const LEGACY_DEFAULT_BASE_URL = "https://router.huggingface.co/v1";
+
+export async function activate(context: vscode.ExtensionContext) {
 	// Initialize logger
 	logger.init();
+	await migrateLegacyGlobalConfiguration(context);
 
 	// Initialize TokenizerManager with extension path
 	TokenizerManager.initialize(context.extensionPath);
@@ -20,36 +24,12 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register the Hugging Face provider under the vendor id used in package.json
 	vscode.lm.registerLanguageModelChatProvider("oaicopilot", provider);
 
-	// Management command to configure API key
-	context.subscriptions.push(
-		vscode.commands.registerCommand("oaicopilot.setApikey", async () => {
-			const existing = await context.secrets.get("oaicopilot.apiKey");
-			const apiKey = await vscode.window.showInputBox({
-				title: "OAI Compatible Provider API Key",
-				prompt: existing ? "Update your OAI Compatible API key" : "Enter your OAI Compatible API key",
-				ignoreFocusOut: true,
-				password: true,
-				value: existing ?? "",
-			});
-			if (apiKey === undefined) {
-				return; // user canceled
-			}
-			if (!apiKey.trim()) {
-				await context.secrets.delete("oaicopilot.apiKey");
-				vscode.window.showInformationMessage("OAI Compatible API key cleared.");
-				return;
-			}
-			await context.secrets.store("oaicopilot.apiKey", apiKey.trim());
-			vscode.window.showInformationMessage("OAI Compatible API key saved.");
-		})
-	);
-
 	// Management command to configure provider-specific API keys
 	context.subscriptions.push(
 		vscode.commands.registerCommand("oaicopilot.setProviderApikey", async () => {
 			// Get provider list from configuration
 			const config = vscode.workspace.getConfiguration();
-			const userModels = normalizeUserModels(config.get<HFModelItem[]>("oaicopilot.models", []));
+			const userModels = getGlobalUserModels(config);
 
 			// Extract unique providers (case-insensitive)
 			const providers = Array.from(
@@ -128,3 +108,54 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+async function migrateLegacyGlobalConfiguration(context: vscode.ExtensionContext): Promise<void> {
+	if (context.globalState.get<boolean>(PROVIDER_CONFIG_MIGRATION_KEY, false)) {
+		return;
+	}
+
+	const config = vscode.workspace.getConfiguration();
+	const explicitLegacyBaseUrl = config.inspect<string>("oaicopilot.baseUrl")?.globalValue?.trim() || "";
+	const legacyBaseUrl = explicitLegacyBaseUrl || LEGACY_DEFAULT_BASE_URL;
+	const legacyApiKey = await context.secrets.get("oaicopilot.apiKey");
+	const currentModels = getGlobalUserModels(config);
+	const hasLegacyConfiguration = Boolean(explicitLegacyBaseUrl || legacyApiKey || currentModels.length > 0);
+	if (!hasLegacyConfiguration) {
+		await context.globalState.update(PROVIDER_CONFIG_MIGRATION_KEY, true);
+		return;
+	}
+
+	const migratedModels = migrateLegacyModelMetadata(
+		currentModels,
+		legacyBaseUrl,
+		currentModels.length === 0 && Boolean(explicitLegacyBaseUrl || legacyApiKey)
+	);
+	const providers = Array.from(
+		new Set(migratedModels.map((model) => canonicalizeProvider(model.owned_by)).filter(Boolean))
+	);
+	try {
+		assertValidModelCollection(migratedModels);
+	} catch (error) {
+		const details = error instanceof Error ? error.message : String(error);
+		void vscode.window.showErrorMessage(
+			`OAICopilot could not migrate the legacy global connection settings. The legacy Base URL and API key were kept unchanged. Resolve the model identity conflicts and reload VS Code. ${details}`
+		);
+		return;
+	}
+
+	if (legacyApiKey) {
+		for (const provider of providers) {
+			const providerKey = `oaicopilot.apiKey.${provider}`;
+			if (!(await context.secrets.get(providerKey))) {
+				await context.secrets.store(providerKey, legacyApiKey);
+			}
+		}
+	}
+
+	if (JSON.stringify(migratedModels) !== JSON.stringify(currentModels)) {
+		await config.update("oaicopilot.models", migratedModels, vscode.ConfigurationTarget.Global);
+	}
+	await context.secrets.delete("oaicopilot.apiKey");
+	await config.update("oaicopilot.baseUrl", undefined, vscode.ConfigurationTarget.Global);
+	await context.globalState.update(PROVIDER_CONFIG_MIGRATION_KEY, true);
+}

@@ -18,7 +18,7 @@ English | [简体中文](README.zh-CN.md)
 - **Vision models**: Full support for image understanding capabilities
 - **Advanced configuration**: Flexible chat request options with thinking/reasoning control
 - **Multi-provider management**: Configure models from multiple providers simultaneously with automatic API key management
-- **Multi-config per model**: Define different settings for the same model (e.g., GLM-4.6 with/without thinking)
+- **Provider-aware model identity**: The same upstream Model ID can coexist across different providers
 - **Visual configuration UI**: Intuitive interface for managing providers and models
 - **Auto-retry**: Handles API errors (429, 500, 502, 503, 504) with exponential backoff
 - **Token usage**: Real-time token counting and provider API key management from status bar
@@ -27,26 +27,31 @@ English | [简体中文](README.zh-CN.md)
 - **Tools optimization**: Optimize agent `read_file` tool handling, avoid to read small chunks for large file.
 
 ## Requirements
-- VS Code 1.104.0 or higher.
+- VS Code 1.120.0 or higher.
 - OpenAI-compatible provider API key.
 
 ## ⚡ Quick Start
 1. Install the OAI Compatible Provider for Copilot extension [here](https://marketplace.visualstudio.com/items?itemName=johnny-zhao.oai-compatible-copilot).
-2. Open VS Code Settings and configure `oaicopilot.baseUrl` and `oaicopilot.models`.
-3. Open GitHub Copilot Chat interface.
-4. Click the model picker and select "Manage Models...".
-5. Choose "OAI Compatible" provider.
-6. Enter your API key — it will be saved locally.
-7. Select the models you want to add to the model picker.
+2. Run **OAICopilot: Open Configuration UI** from the Command Palette.
+3. Add a provider with its Base URL, API Key, and API mode.
+4. Add one or more models with globally unique Display Names.
+5. Open GitHub Copilot Chat and select the configured model.
 
 ### Settings Example
 
 ```json
-"oaicopilot.baseUrl": "https://api-inference.modelscope.cn/v1",
 "oaicopilot.models": [
+    {
+        "id": "__provider__modelscope",
+        "owned_by": "modelscope",
+        "providerConfig": true,
+        "baseUrl": "https://api-inference.modelscope.cn/v1",
+        "apiMode": "openai"
+    },
     {
         "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
         "owned_by": "modelscope",
+        "displayName": "Qwen3 Coder via ModelScope",
         "context_length": 256000,
         "max_tokens": 8192,
         "temperature": 0,
@@ -54,6 +59,8 @@ English | [简体中文](README.zh-CN.md)
     }
 ]
 ```
+
+`providerConfig: true` records are internal provider connection metadata. Prefer the Configuration UI to create and update them. Models are user-level application settings. API keys are encrypted separately in VS Code SecretStorage and must be entered again on each machine.
 
 ## ✨ Configuration UI
 
@@ -88,6 +95,7 @@ There are two ways to open the configuration interface:
    - Click "Add Model" in the Model Management section
    - Select Provider: "modelscope"
    - Enter Model ID: "Qwen/Qwen3-Coder-480B-A35B-Instruct"
+    - Enter a globally unique Display Name
    - Configure basic parameters (context length, max tokens, etc.)
    - Click "Save Model"
 
@@ -101,11 +109,12 @@ There are two ways to open the configuration interface:
 
 ### Tips & Best Practices
 
-- **Important**: If you use the configuration UI, the global baseURL and API key become invalid.
+- **Provider-only connection settings**: Base URL and API Key are configured per provider; there is no global connection fallback.
 - **Provider IDs**: Use descriptive names that match the service (e.g., "modelscope", "iflow", "anthropic")
-- **Model IDs**: Use the exact model identifier from the provider's documentation
-- **Config IDs**: Use meaningful names like "thinking", "no-thinking", "fast", "accurate" for multiple configurations
-- **Base URL Overrides**: Set model-specific base URLs when using models from different endpoints of the same provider
+- **Model IDs**: Use the exact identifier from the provider. It must be unique within that provider, but another provider may use the same ID.
+- **Display Names**: Required and globally unique after Unicode normalization, trimming, and case folding.
+- **Config IDs**: Optional descriptive labels; they do not allow duplicate Model IDs within one provider.
+- **Connection Overrides**: Models inherit Base URL, API mode, and headers from their provider. Set a model field only when an explicit per-model override is required.
 - **Save Frequently**: Changes are saved to VS Code settings immediately
 - **Refresh**: Use the "Refresh" buttons to reload current configuration from VS Code settings
 
@@ -164,18 +173,35 @@ Mixed configuration with multiple API modes:
 ```json
 "oaicopilot.models": [
     {
+        "id": "__provider__openai",
+        "owned_by": "openai",
+        "providerConfig": true,
+        "baseUrl": "https://api.openai.com/v1",
+        "apiMode": "openai"
+    },
+    {
+        "id": "__provider__sub2api",
+        "owned_by": "sub2api",
+        "providerConfig": true,
+        "baseUrl": "http://localhost:8080/v1",
+        "apiMode": "openai-responses"
+    },
+    {
         "id": "GLM-4.6",
         "owned_by": "modelscope",
+		"displayName": "GLM-4.6 via ModelScope"
     },
     {
         "id": "llama3.2",
         "owned_by": "ollama",
+		"displayName": "Llama 3.2 via Ollama",
         "baseUrl": "http://localhost:11434",
         "apiMode": "ollama"
     },
     {
         "id": "claude-3-5-sonnet-20241022",
         "owned_by": "anthropic",
+		"displayName": "Claude 3.5 Sonnet via Anthropic",
         "baseUrl": "https://api.anthropic.com",
         "apiMode": "anthropic"
     }
@@ -206,11 +232,12 @@ Mixed configuration with multiple API modes:
 ### Settings Example
 
 ```json
-"oaicopilot.baseUrl": "https://api-inference.modelscope.cn/v1",
 "oaicopilot.models": [
     {
         "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
         "owned_by": "modelscope",
+        "displayName": "Qwen3 Coder via ModelScope",
+        "baseUrl": "https://api-inference.modelscope.cn/v1",
         "context_length": 256000,
         "max_tokens": 8192,
         "temperature": 0,
@@ -219,6 +246,7 @@ Mixed configuration with multiple API modes:
     {
         "id": "qwen3-coder",
         "owned_by": "iflow",
+        "displayName": "Qwen3 Coder via iFlow",
         "baseUrl": "https://apis.iflow.cn/v1",
         "context_length": 256000,
         "max_tokens": 8192,
@@ -230,49 +258,33 @@ Mixed configuration with multiple API modes:
 
 </details>
 
-## ✨ Multi-config for the same model
+## ✨ Model identity and Display Names
 
-You can define multiple configurations for the same model ID by using the `configId` field. This allows you to have the same base model with different settings for different use cases.
+Model identity is the combination of Provider ID and Model ID. The same Model ID can therefore be configured for different providers, while duplicate Model IDs within one provider are rejected. Display Names are required and globally unique.
 
 <details>
 <summary>Click Here for Details</summary>
 
-To use this feature:
-
-1. Add the `configId` field to your model configuration
-2. Each configuration with the same `id` must have a unique `configId`
-3. The model will appear as separate entries in the VS Code model picker
+The optional `configId` field is retained as metadata only. It is not part of model identity and cannot be used to create duplicate entries within one provider.
 
 ### Settings Example
 
 ```json
 "oaicopilot.models": [
     {
-        "id": "glm-4.6",
-        "configId": "thinking",
-        "owned_by": "zai",
-        "temperature": 0.7,
-        "top_p": 1,
-        "thinking": {
-            "type": "enabled"
-        }
+        "id": "gpt-5",
+        "owned_by": "openai",
+        "displayName": "GPT-5 via OpenAI"
     },
     {
-        "id": "glm-4.6",
-        "configId": "no-thinking",
-        "owned_by": "zai",
-        "temperature": 0,
-        "top_p": 1,
-        "thinking": {
-            "type": "disabled"
-        }
+        "id": "gpt-5",
+        "owned_by": "sub2api",
+        "displayName": "GPT-5 via Sub2API"
     }
 ]
 ```
 
-In this example, you'll have three different configurations of the glm-4.6 model available in VS Code:
-- `glm-4.6::thinking` - use GLM-4.6 with thinking
-- `glm-4.6::no-thinking` - use GLM-4.6 without thinking
+Both entries use the upstream ID `gpt-5`, but each is routed to its own provider. Their Display Names remain distinct in the VS Code model picker.
 
 </details>
 
@@ -295,6 +307,7 @@ You can specify custom HTTP headers that will be sent with every request to a sp
     {
         "id": "custom-model",
         "owned_by": "provider",
+		"displayName": "Custom Model via Provider",
         "baseUrl": "https://api.example.com/v1",
         "headers": {
             "X-API-Version": "2024-01",
@@ -337,6 +350,7 @@ The `extra` field allows you to add arbitrary parameters to the API request body
     {
         "id": "custom-model",
         "owned_by": "openai",
+		"displayName": "Custom Model via OpenAI",
         "extra": {
             "seed": 42,
             "logprobs": true,
@@ -348,6 +362,7 @@ The `extra` field allows you to add arbitrary parameters to the API request body
     {
         "id": "local-model",
         "owned_by": "ollama",
+		"displayName": "Local Model via Ollama",
         "baseUrl": "http://localhost:11434",
         "apiMode": "ollama",
         "extra": {
@@ -358,6 +373,7 @@ The `extra` field allows you to add arbitrary parameters to the API request body
     {
         "id": "claude-model",
         "owned_by": "anthropic",
+		"displayName": "Claude Model via Anthropic",
         "baseUrl": "https://api.anthropic.com",
         "apiMode": "anthropic",
         "extra": {
@@ -377,6 +393,7 @@ Use `apiMode: "openai-responses"` and set the reasoning summary mode:
 {
   "id": "gpt-4o-mini",
   "owned_by": "openai",
+	"displayName": "GPT-4o Mini via OpenAI",
   "baseUrl": "https://api.openai.com/v1",
   "apiMode": "openai-responses",
   "reasoning_effort": "high",
@@ -395,6 +412,7 @@ Use `apiMode: "gemini"` and enable thought summaries:
 {
   "id": "gemini-3-flash-preview",
   "owned_by": "gemini",
+	"displayName": "Gemini 3 Flash Preview",
   "baseUrl": "https://generativelanguage.googleapis.com",
   "apiMode": "gemini",
   "extra": {
@@ -409,7 +427,8 @@ Use `apiMode: "gemini"` and enable thought summaries:
 
 ### Important Notes
 - Parameters in `extra` are added after standard parameters
-- If an `extra` parameter conflicts with a standard parameter, the `extra` value takes precedence
+- `extra.model` is ignored: requests always use the exact configured upstream Model ID
+- Other conflicting `extra` parameters generally take precedence unless the API adapter reserves them
 - Use this for provider-specific features only
 - Standard parameters (temperature, top_p, etc.) should use their dedicated fields when possible
 - API provider must support the parameters you specify
@@ -421,10 +440,10 @@ All parameters support individual configuration for different models, providing 
 
 - `id` (required): Model identifier
 - `owned_by` (required): Model provider
-- `displayName`: Display name for the model that will be shown in the Copilot interface.
-- `configId`: Configuration ID for this model. Allows defining the same model with different settings (e.g. 'glm-4.6::thinking', 'glm-4.6::no-thinking')
+- `displayName` (required): Globally unique name shown in the Copilot interface. Comparison uses NFKC normalization, trimming, and case folding.
+- `configId`: Optional descriptive label. It is not part of model identity and does not allow duplicate Model IDs within one provider.
 - `family`: Model family (e.g., 'gpt-4', 'claude-3', 'gemini'). Enables model-specific optimizations and behaviors. Defaults to 'oai-compatible' if not specified.
-- `baseUrl`: Model-specific base URL. If not provided, the global `oaicopilot.baseUrl` will be used
+- `baseUrl`: Optional model-specific Base URL override. If omitted, the provider's Base URL configured in Provider Management is used. There is no global Base URL fallback.
 - `context_length`: The context length supported by the model. Default value is 128000
 - `max_tokens`: Maximum number of tokens to generate (range: [1, context_length]). Default value is 4096
 - `max_completion_tokens`: Maximum number of tokens to generate (OpenAI new standard parameter)

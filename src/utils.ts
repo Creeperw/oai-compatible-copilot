@@ -3,6 +3,7 @@ import type { HFModelItem, RetryConfig } from "./types";
 import { OpenAIFunctionToolDef } from "./openai/openaiTypes";
 
 import { logger } from "./logger";
+import { canonicalizeProvider, getModelProviderId, normalizeConfiguredModel } from "./modelIdentity";
 
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INTERVAL_MS = 1000;
@@ -25,27 +26,7 @@ const networkErrorPatterns = [
 	"NetworkError",
 ];
 
-// Model ID parsing helper
-export interface ParsedModelId {
-	baseId: string;
-	configId?: string;
-}
-
-export function getModelProviderId(model: unknown): string {
-	if (!model || typeof model !== "object") {
-		return "";
-	}
-	const obj = model as Record<string, unknown>;
-	const pick = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
-	return (
-		pick(obj.owned_by) ||
-		pick(obj.provide) ||
-		pick(obj.provider) ||
-		pick(obj.ownedBy) ||
-		pick(obj.owner) ||
-		pick(obj.vendor)
-	);
-}
+export { getModelProviderId } from "./modelIdentity";
 
 export function normalizeUserModels(models: unknown): HFModelItem[] {
 	const list = Array.isArray(models) ? models : [];
@@ -55,26 +36,75 @@ export function normalizeUserModels(models: unknown): HFModelItem[] {
 			continue;
 		}
 		const provider = getModelProviderId(item);
-		out.push({ ...(item as HFModelItem), owned_by: provider });
+		out.push(normalizeConfiguredModel({ ...(item as HFModelItem), owned_by: provider }));
 	}
 	return out;
 }
 
 /**
- * Parse a model ID that may contain a configuration ID separator.
- * Format: "baseId::configId" or just "baseId"
+ * Provider credentials live in user SecretStorage, so model endpoints must also
+ * come from trusted user-level settings rather than workspace overrides.
  */
-export function parseModelId(modelId: string): ParsedModelId {
-	const parts = modelId.split("::");
-	if (parts.length >= 2) {
-		return {
-			baseId: parts[0],
-			configId: parts.slice(1).join("::"), // In case configId itself contains '::'
-		};
+export function getGlobalUserModels(config = vscode.workspace.getConfiguration()): HFModelItem[] {
+	const inspected = config.inspect<unknown>("oaicopilot.models");
+	return normalizeUserModels(inspected?.globalValue ?? []);
+}
+
+/** Return original provider spellings from trusted global settings. */
+export function getGlobalProviderAliases(config = vscode.workspace.getConfiguration()): Map<string, string[]> {
+	const inspected = config.inspect<unknown>("oaicopilot.models");
+	const list = Array.isArray(inspected?.globalValue) ? inspected.globalValue : [];
+	const aliases = new Map<string, string[]>();
+	for (const item of list) {
+		const rawProvider = getModelProviderId(item);
+		const canonicalProvider = canonicalizeProvider(rawProvider);
+		if (!canonicalProvider || !rawProvider || rawProvider === canonicalProvider) {
+			continue;
+		}
+		const values = aliases.get(canonicalProvider) ?? [];
+		if (!values.includes(rawProvider)) {
+			values.push(rawProvider);
+			aliases.set(canonicalProvider, values);
+		}
 	}
-	return {
-		baseId: modelId,
-	};
+	return aliases;
+}
+
+/** Resolve a provider key and safely migrate historical mixed-case storage keys. */
+export async function getProviderApiKey(
+	secrets: vscode.SecretStorage,
+	provider: string,
+	aliases: readonly string[] = []
+): Promise<string | undefined> {
+	const canonicalProvider = canonicalizeProvider(provider);
+	if (!canonicalProvider) {
+		return undefined;
+	}
+
+	const canonicalStorageKey = `oaicopilot.apiKey.${canonicalProvider}`;
+	const canonicalKey = await secrets.get(canonicalStorageKey);
+	if (canonicalKey) {
+		return canonicalKey;
+	}
+
+	for (const alias of aliases) {
+		if (!alias || alias === canonicalProvider) {
+			continue;
+		}
+		const legacyStorageKey = `oaicopilot.apiKey.${alias}`;
+		const legacyKey = await secrets.get(legacyStorageKey);
+		if (!legacyKey) {
+			continue;
+		}
+		await secrets.store(canonicalStorageKey, legacyKey);
+		const storedKey = await secrets.get(canonicalStorageKey);
+		if (storedKey !== legacyKey) {
+			throw new Error(`Failed to migrate the API key for provider "${canonicalProvider}".`);
+		}
+		await secrets.delete(legacyStorageKey);
+		return legacyKey;
+	}
+	return undefined;
 }
 
 /**

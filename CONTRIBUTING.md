@@ -17,7 +17,7 @@ As the copyright owner, you agree to license your contributions under an irrevoc
 ### For Developers: Creating a Pull Request
 
 **Requirements:**
-- VS Code 1.104.0 or higher.
+- VS Code 1.120.0 or higher.
 - Node.js 22.
 - Your OpenAI-compatible provider API key.
 

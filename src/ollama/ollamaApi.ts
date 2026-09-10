@@ -143,6 +143,9 @@ export class OllamaApi extends CommonApi<OllamaMessage, OllamaRequestBody> {
 		if (um?.extra && typeof um.extra === "object") {
 			// Add all extra parameters directly to the request body
 			for (const [key, value] of Object.entries(um.extra)) {
+				if (key === "model") {
+					continue;
+				}
 				if (value !== undefined) {
 					if (key === "tools" && Array.isArray(value) && rb.tools) {
 						rb.tools = [...rb.tools, ...value];

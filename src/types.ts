@@ -22,6 +22,8 @@ export interface HFModelItem {
 	object?: string;
 	created?: number;
 	owned_by: string;
+	/** Internal metadata record used to persist provider-level connection settings. */
+	providerConfig?: boolean;
 	configId?: string;
 	displayName?: string;
 	baseUrl?: string;

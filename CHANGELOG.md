@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.4.3
+
+- Add provider-aware model identity so different providers can expose the same upstream Model ID while Display Names remain globally unique.
+- Move Base URL, API mode, headers, and API keys to provider-level configuration with explicit model overrides and safe legacy migration.
+- Remove the global Base URL/API key controls and restrict model endpoints to trusted user-level application settings.
+- Harden configuration import/export and the Webview so provider API keys are not exposed to page scripts.
+- Fix OpenAI Responses compatibility, prevent `extra.model` from replacing the configured raw model ID, and preserve Gemini resource paths.
+
 ## 0.4.2 (2026-05-19)
 
 - Feat(anthropic): Enable prompt caching. The system prompt and the last tool definition are now marked with `cache_control: { type: "ephemeral" }`, and in-message `cache_control` markers emitted by Copilot (`LanguageModelDataPart` with mimeType `"cache_control"`) are forwarded to Anthropic instead of being silently dropped. Add a per-model `cache_control` boolean (default `true`) to disable it for providers that reject the field.
