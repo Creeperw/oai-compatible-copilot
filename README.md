@@ -326,6 +326,43 @@ You can specify custom HTTP headers that will be sent with every request to a sp
 
 </details>
 
+## ✨ Session ID header
+
+Some providers route requests and cache prompts per conversation, and reject requests that do not carry a session identifier. OpenCode Zen/Go is one of them: it answers `400 MissingSessionID` unless the request includes an `x-opencode-session` header.
+
+VS Code does not expose a conversation identifier to language model providers, so the extension derives a stable ID from the first user turn of the conversation. The ID stays the same for every request of one conversation and differs between conversations.
+
+<details>
+<summary>Click Here for Details</summary>
+
+### Session ID Header Example
+
+```json
+"oaicopilot.models": [
+    {
+        "id": "__provider__opencode",
+        "owned_by": "opencode",
+        "providerConfig": true,
+        "baseUrl": "https://opencode.ai/zen/go/v1",
+        "session_id_header": "x-opencode-session"
+    },
+    {
+        "id": "deepseek-v4-pro",
+        "owned_by": "opencode",
+        "displayName": "DeepSeek V4 Pro via OpenCode"
+    }
+]
+```
+
+**Important Notes:**
+- Set `session_id_header` to the header name your provider expects. Leave it unset to disable the feature.
+- It is provider-level configuration, so every model of that provider inherits it. An individual model entry can still override it.
+- You can also set it in the Configuration UI, in the **Session ID Header** column of the Providers table.
+- The value is a UUID-shaped SHA-256 hash of the first user turn, so no conversation content leaves the machine in the header.
+- VS Code does not expose a conversation ID, so two conversations that start with an identical first user message share a session ID.
+
+</details>
+
 ## ✨ Custom Request body parameters
 
 The `extra` field allows you to add arbitrary parameters to the API request body. This is useful for provider-specific features that aren't covered by the standard parameters.
@@ -470,6 +507,7 @@ All parameters support individual configuration for different models, providing 
   - `type`: Set to 'enabled' to enable thinking, 'disabled' to disable thinking
 - `reasoning_effort`: Reasoning effort level (OpenAI reasoning configuration)
 - `headers`: Custom HTTP headers to be sent with every request to this model's provider (e.g., `{"X-API-Version": "v1", "X-Custom-Header": "value"}`). These headers will be merged with the default headers (Authorization, Content-Type, User-Agent)
+- `session_id_header`: Name of an HTTP header used to send a stable per-conversation session ID (e.g., `"x-opencode-session"`). Provider-level configuration; required by providers that route requests by session, such as OpenCode Zen/Go. Leave unset to disable
 - `extra`: Extra request body parameters.
 - `include_reasoning_in_request`: Whether to include reasoning_content in assistant messages sent to the API. Supports deepseek-v3.2 and similar models.
 - `apiMode`: API mode: 'openai' (Default) for API (/chat/completions), 'openai-responses' for API (/responses), 'ollama' for API (/api/chat), 'anthropic' for API (/v1/messages), 'gemini' for API (/v1beta/models/{model}:streamGenerateContent?alt=sse).

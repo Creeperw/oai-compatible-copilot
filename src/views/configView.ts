@@ -73,6 +73,7 @@ type IncomingMessage =
 			apiKey?: string;
 			apiMode?: string;
 			headers?: Record<string, string>;
+			sessionIdHeader?: string;
 	  }
 	| {
 			type: "updateProvider";
@@ -81,6 +82,7 @@ type IncomingMessage =
 			apiKey?: string;
 			apiMode?: string;
 			headers?: Record<string, string>;
+			sessionIdHeader?: string;
 	  }
 	| { type: "deleteProvider"; provider: string }
 	| { type: "addModel"; model: HFModelItem }
@@ -241,10 +243,24 @@ export class ConfigViewPanel {
 				break;
 			}
 			case "addProvider":
-				await this.addProvider(message.provider, message.baseUrl, message.apiKey, message.apiMode, message.headers);
+				await this.addProvider(
+					message.provider,
+					message.baseUrl,
+					message.apiKey,
+					message.apiMode,
+					message.headers,
+					message.sessionIdHeader
+				);
 				break;
 			case "updateProvider":
-				await this.updateProvider(message.provider, message.baseUrl, message.apiKey, message.apiMode, message.headers);
+				await this.updateProvider(
+					message.provider,
+					message.baseUrl,
+					message.apiKey,
+					message.apiMode,
+					message.headers,
+					message.sessionIdHeader
+				);
 				break;
 			case "deleteProvider":
 				await this.deleteProvider(message.provider);
@@ -418,7 +434,8 @@ export class ConfigViewPanel {
 		baseUrl?: string,
 		apiKey?: string,
 		apiMode?: string,
-		headers?: Record<string, string>
+		headers?: Record<string, string>,
+		sessionIdHeader?: string
 	) {
 		const normalizedProvider = canonicalizeProvider(provider);
 		if (!normalizedProvider) {
@@ -436,6 +453,7 @@ export class ConfigViewPanel {
 				baseUrl,
 				apiMode: (apiMode as HFApiMode) || "openai",
 				headers,
+				session_id_header: sessionIdHeader?.trim() || undefined,
 			})
 		);
 		assertValidModelCollection(models);
@@ -454,7 +472,8 @@ export class ConfigViewPanel {
 		baseUrl?: string,
 		apiKey?: string,
 		apiMode?: string,
-		headers?: Record<string, string>
+		headers?: Record<string, string>,
+		sessionIdHeader?: string
 	) {
 		const normalizedProvider = canonicalizeProvider(provider);
 		if (!normalizedProvider) {
@@ -479,6 +498,7 @@ export class ConfigViewPanel {
 					baseUrl: baseUrl?.trim() || undefined,
 					apiMode: (apiMode as HFApiMode) || model.apiMode,
 					...(headers !== undefined && { headers }),
+					...(sessionIdHeader !== undefined && { session_id_header: sessionIdHeader.trim() || undefined }),
 				};
 			}
 			return model;
@@ -489,6 +509,7 @@ export class ConfigViewPanel {
 					baseUrl,
 					apiMode: (apiMode as HFApiMode) || "openai",
 					headers,
+					session_id_header: sessionIdHeader?.trim() || undefined,
 				})
 			);
 		}

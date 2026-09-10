@@ -68,7 +68,7 @@ export function defaultDisplayName(model: Pick<HFModelItem, "id" | "owned_by">):
 
 export function createProviderConfiguration(
 	provider: string,
-	configuration: Pick<HFModelItem, "baseUrl" | "apiMode" | "headers"> = {}
+	configuration: Pick<HFModelItem, "baseUrl" | "apiMode" | "headers" | "session_id_header"> = {}
 ): HFModelItem {
 	const canonicalProvider = canonicalizeProvider(provider);
 	if (!canonicalProvider) {
@@ -97,6 +97,7 @@ export function resolveModelConnection(models: readonly HFModelItem[], model: HF
 		baseUrl: model.baseUrl || providerConfiguration?.baseUrl,
 		apiMode: model.apiMode || providerConfiguration?.apiMode,
 		headers: model.headers || providerConfiguration?.headers,
+		session_id_header: model.session_id_header || providerConfiguration?.session_id_header,
 		providerConfig: undefined,
 	});
 }

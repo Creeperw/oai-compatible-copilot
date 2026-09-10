@@ -326,6 +326,43 @@ VS Code Copilot 针对特定模型优化了系统提示词。[详细介绍](http
 
 </details>
 
+## ✨ 会话 ID 请求头
+
+部分供应商会按会话做请求路由与提示词缓存，缺少会话标识时直接拒绝请求。OpenCode Zen/Go 就是其中之一：请求缺少 `x-opencode-session` 请求头时会返回 `400 MissingSessionID`。
+
+VS Code 不会向语言模型供应商暴露会话标识，因此本扩展会从对话的首个用户轮次推导出一个稳定的 ID。同一对话的每次请求该 ID 保持不变，不同对话之间则互不相同。
+
+<details>
+<summary>点击查看详情</summary>
+
+### 会话 ID 请求头示例
+
+```json
+"oaicopilot.models": [
+    {
+        "id": "__provider__opencode",
+        "owned_by": "opencode",
+        "providerConfig": true,
+        "baseUrl": "https://opencode.ai/zen/go/v1",
+        "session_id_header": "x-opencode-session"
+    },
+    {
+        "id": "deepseek-v4-pro",
+        "owned_by": "opencode",
+        "displayName": "DeepSeek V4 Pro via OpenCode"
+    }
+]
+```
+
+**重要说明：**
+- 将 `session_id_header` 设为你的供应商所要求的请求头名称。不设置即为关闭该功能。
+- 它属于供应商级配置，该供应商下的所有模型都会继承；单个模型条目仍可覆盖它。
+- 你也可以在配置界面中设置，位于供应商表格的 **Session ID Header** 列。
+- 该值是首个用户轮次的 SHA-256 哈希（UUID 形状），因此请求头中不会携带任何对话内容。
+- 由于 VS Code 不提供会话 ID，两条首个用户消息完全相同的对话会共用同一个会话 ID。
+
+</details>
+
 ## ✨ 自定义请求体参数
 
 `extra` 字段允许你向 API 请求体添加任意参数。适用于标准参数未覆盖的供应商特定功能。
@@ -470,6 +507,7 @@ VS Code Copilot 针对特定模型优化了系统提示词。[详细介绍](http
   - `type`：设为 'enabled' 开启思维链，'disabled' 关闭思维链
 - `reasoning_effort`：推理力度级别（OpenAI 推理配置）
 - `headers`：发送到此模型供应商的自定义 HTTP 请求头（如 `{"X-API-Version": "v1", "X-Custom-Header": "value"}`）。将与默认请求头（Authorization、Content-Type、User-Agent）合并
+- `session_id_header`：用于发送稳定的每会话 ID 的 HTTP 请求头名称（如 `"x-opencode-session"`）。供应商级配置；按会话路由请求的供应商（如 OpenCode Zen/Go）需要此项。不设置即为关闭
 - `extra`：额外请求体参数。
 - `include_reasoning_in_request`：是否在发送给 API 的 assistant 消息中包含 reasoning_content。支持 deepseek-v3.2 及类似模型。
 - `apiMode`：API 模式：'openai'（默认）对应 API（/chat/completions），'openai-responses' 对应 API（/responses），'ollama' 对应 API（/api/chat），'anthropic' 对应 API（/v1/messages），'gemini' 对应 API（/v1beta/models/{model}:streamGenerateContent?alt=sse）。

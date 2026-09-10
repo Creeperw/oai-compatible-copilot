@@ -34,6 +34,7 @@ import { GeminiApi, buildGeminiGenerateContentUrl, type GeminiToolCallMeta } fro
 import type { GeminiGenerateContentRequest } from "./gemini/geminiTypes";
 import { CommonApi } from "./commonApi";
 import { logger } from "./logger";
+import { computeSessionId } from "./sessionId";
 
 /**
  * VS Code Chat provider backed by Hugging Face Inference Providers.
@@ -184,6 +185,16 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 
 			// prepare headers with custom headers if specified
 			const requestHeaders = CommonApi.prepareHeaders(modelApiKey, apiMode, um.headers);
+
+			// Send a stable per-conversation session ID when the provider routes by session.
+			const sessionIdHeader = um.session_id_header;
+			if (sessionIdHeader) {
+				const sessionId = computeSessionId(messages);
+				if (sessionId) {
+					requestHeaders[sessionIdHeader] = sessionId;
+				}
+			}
+
 			logger.debug("request.headers", {
 				headers: logger.sanitizeHeaders(requestHeaders as Record<string, string>),
 			});

@@ -151,6 +151,30 @@ suite("modelIdentity", () => {
 		assert.deepStrictEqual(resolved.headers, { "X-Provider": "default" });
 	});
 
+	test("inherits the provider session ID header and lets a model override it", () => {
+		const providerConfiguration = createProviderConfiguration("opencode", {
+			baseUrl: "https://opencode.ai/zen/go/v1",
+			session_id_header: "x-opencode-session",
+		});
+		const inheriting = model({ id: "deepseek-v4-pro", owned_by: "opencode" });
+		const overriding = model({ id: "kimi-k3", owned_by: "opencode", session_id_header: "x-custom-session" });
+
+		assert.strictEqual(
+			resolveModelConnection([providerConfiguration, inheriting], inheriting).session_id_header,
+			"x-opencode-session"
+		);
+		assert.strictEqual(
+			resolveModelConnection([providerConfiguration, overriding], overriding).session_id_header,
+			"x-custom-session"
+		);
+	});
+
+	test("leaves the session ID header unset when no provider configures one", () => {
+		const configured = model({ id: "deepseek-v4-pro", owned_by: "opencode" });
+
+		assert.strictEqual(resolveModelConnection([configured], configured).session_id_header, undefined);
+	});
+
 	test("resolves provider-aware IDs exactly and rejects ambiguous legacy IDs", () => {
 		const models = [model(), model({ owned_by: "sub2api", displayName: "GPT-5 via Sub2API" })];
 		const sub2apiRuntimeId = createRuntimeModelId(models[1]);

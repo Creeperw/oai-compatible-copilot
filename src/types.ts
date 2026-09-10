@@ -72,6 +72,18 @@ export interface HFModelItem {
 	headers?: Record<string, string>;
 
 	/**
+	 * Name of an HTTP header used to send a stable per-conversation session ID.
+	 *
+	 * VS Code does not expose a conversation identifier to language model providers,
+	 * so the ID is derived from the first user turn of the conversation. Required by
+	 * providers that route requests by session, for example OpenCode Zen/Go, which
+	 * expects `x-opencode-session`.
+	 *
+	 * Example: "x-opencode-session"
+	 */
+	session_id_header?: string;
+
+	/**
 	 * Whether to include reasoning_content in assistant messages sent to the API.
 	 * Support deepseek-v3.2 or others.
 	 */

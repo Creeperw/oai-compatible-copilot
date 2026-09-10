@@ -376,6 +376,10 @@
 								},
 								"description": "Custom HTTP headers to be sent with every request to this model's provider. These headers will be merged with the default headers (Authorization, Content-Type, User-Agent)."
 							},
+							"session_id_header": {
+								"type": "string",
+								"description": "Name of an HTTP header used to send a stable per-conversation session ID, derived from the first user turn. Required by providers that route requests by session, for example OpenCode Zen/Go which expects 'x-opencode-session'. Leave empty to disable."
+							},
 							"include_reasoning_in_request": {
 								"type": "boolean",
 								"default": false,

@@ -194,6 +194,14 @@ document.getElementById("addProvider").addEventListener("click", () => {
 		createProviderInput("textarea", "headers", "", { rows: 2, placeholder: '{"X-API-Version": "v1"}' })
 	);
 	newRow.appendChild(headersCell);
+	const sessionIdCell = document.createElement("td");
+	sessionIdCell.appendChild(
+		createProviderInput("input", "sessionIdHeader", "", {
+			type: "text",
+			placeholder: "x-opencode-session",
+		})
+	);
+	newRow.appendChild(sessionIdCell);
 	const actions = document.createElement("td");
 	for (const [className, label] of [
 		["save-provider-btn secondary", "Save"],
@@ -238,6 +246,7 @@ document.getElementById("addProvider").addEventListener("click", () => {
 				apiKey: providerData.apiKey || undefined,
 				apiMode: providerData.apiMode || undefined,
 				headers: parsedHeaders.value,
+				sessionIdHeader: providerData.sessionIdHeader,
 			},
 			() => newRow.remove(),
 			showProviderError
@@ -459,6 +468,7 @@ function renderProviders() {
 					apiKey: providerData.apiKey || undefined,
 					apiMode: providerData.apiMode || undefined,
 					headers: parsedHeaders.value,
+					sessionIdHeader: providerData.sessionIdHeader,
 				},
 				() => showProviderError(""),
 				showProviderError
@@ -584,6 +594,15 @@ function createProviderRow(provider) {
 		)
 	);
 	row.appendChild(headersCell);
+
+	const sessionIdCell = document.createElement("td");
+	sessionIdCell.appendChild(
+		createProviderInput("input", "sessionIdHeader", providerConfig.session_id_header, {
+			type: "text",
+			placeholder: "x-opencode-session",
+		})
+	);
+	row.appendChild(sessionIdCell);
 
 	const actions = document.createElement("td");
 	actions.className = "action-buttons";

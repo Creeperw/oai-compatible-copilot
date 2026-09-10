@@ -7,6 +7,7 @@
 - Remove the global Base URL/API key controls and restrict model endpoints to trusted user-level application settings.
 - Harden configuration import/export and the Webview so provider API keys are not exposed to page scripts.
 - Fix OpenAI Responses compatibility, prevent `extra.model` from replacing the configured raw model ID, and preserve Gemini resource paths.
+- Feat: Add a provider-level `session_id_header` option. When set, every request carries a stable per-conversation session ID in that header, derived from the first user turn of the conversation. This unblocks providers that route requests by session, such as OpenCode Zen/Go, which expects `x-opencode-session` and otherwise answers `400 MissingSessionID`.
 
 ## 0.4.2 (2026-05-19)
 
