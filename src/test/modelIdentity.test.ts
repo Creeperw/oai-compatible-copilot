@@ -136,6 +136,65 @@ suite("modelIdentity", () => {
 		assert.ok(validation.errors.some((error) => error.includes("reserved")));
 	});
 
+	test("adopts provider records written before the providerConfig marker existed", () => {
+		// Shape produced by older releases: reserved ID, no marker, no Display Name.
+		const legacyProvider: HFModelItem = {
+			id: "__provider__opencode",
+			owned_by: "opencode",
+			baseUrl: "https://opencode.ai/zen/go/v1",
+			apiMode: "openai",
+			headers: { "User-Agent": "legacy-agent/1.0" },
+		};
+		const legacyModel: HFModelItem = {
+			id: "deepseek-v4-pro",
+			owned_by: "opencode",
+			context_length: 256000,
+		};
+
+		const migrated = migrateLegacyModelMetadata([legacyProvider, legacyModel]);
+
+		assert.strictEqual(validateModelCollection(migrated).valid, true, JSON.stringify(migrated));
+		assert.strictEqual(migrated.length, 2, "must not add a second provider record");
+		const adopted = getProviderConfiguration(migrated, "opencode");
+		assert.strictEqual(isProviderPlaceholder(adopted!), true);
+		assert.strictEqual(adopted!.baseUrl, "https://opencode.ai/zen/go/v1");
+		assert.strictEqual(adopted!.apiMode, "openai");
+		assert.deepStrictEqual(adopted!.headers, { "User-Agent": "legacy-agent/1.0" });
+	});
+
+	test("keeps a session ID header configured on a legacy provider record", () => {
+		const migrated = migrateLegacyModelMetadata([
+			{
+				id: "__provider__opencode",
+				owned_by: "opencode",
+				baseUrl: "https://opencode.ai/zen/go/v1",
+				apiMode: "openai",
+				session_id_header: "x-opencode-session",
+			},
+			{ id: "deepseek-v4-pro", owned_by: "opencode" },
+		]);
+		const configured = migrated.find((item) => item.id === "deepseek-v4-pro")!;
+
+		assert.strictEqual(validateModelCollection(migrated).valid, true);
+		assert.strictEqual(resolveModelConnection(migrated, configured).session_id_header, "x-opencode-session");
+	});
+
+	test("lets an explicit provider record win over a duplicate legacy record", () => {
+		const migrated = migrateLegacyModelMetadata([
+			{ id: "__provider__opencode", owned_by: "opencode", baseUrl: "https://legacy.example/v1" },
+			createProviderConfiguration("opencode", {
+				baseUrl: "https://opencode.ai/zen/go/v1",
+				session_id_header: "x-opencode-session",
+			}),
+		]);
+
+		assert.strictEqual(validateModelCollection(migrated).valid, true, JSON.stringify(migrated));
+		assert.strictEqual(migrated.filter(isProviderPlaceholder).length, 1);
+		const adopted = getProviderConfiguration(migrated, "opencode")!;
+		assert.strictEqual(adopted.baseUrl, "https://opencode.ai/zen/go/v1");
+		assert.strictEqual(adopted.session_id_header, "x-opencode-session");
+	});
+
 	test("recognizes explicit provider metadata and resolves model overrides", () => {
 		const providerConfiguration = createProviderConfiguration(" OpenAI ", {
 			baseUrl: "https://provider.example/v1",

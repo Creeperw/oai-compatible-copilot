@@ -42,6 +42,91 @@ export function isProviderPlaceholder(candidate: ProviderPlaceholderCandidate): 
 	return candidate.providerConfig === true;
 }
 
+const PROVIDER_RECORD_ID_PREFIX = "__provider__";
+
+/**
+ * Older releases stored provider connection records as a reserved
+ * "__provider__<provider>" ID without the providerConfig marker, and treated
+ * every such ID as provider metadata. Identify those records so migration can
+ * adopt them instead of rejecting the whole configuration.
+ *
+ * A record that carries a Display Name is never adopted, because a Display Name
+ * marks a record as a selectable model.
+ */
+function getLegacyProviderRecordProvider(model: HFModelItem): string | undefined {
+	if (model.providerConfig === true) {
+		return undefined;
+	}
+	const id = typeof model.id === "string" ? model.id.trim() : "";
+	if (!id.startsWith(PROVIDER_RECORD_ID_PREFIX)) {
+		return undefined;
+	}
+	if (typeof model.displayName === "string" && model.displayName.trim()) {
+		return undefined;
+	}
+	const providerFromId = canonicalizeProvider(id.slice(PROVIDER_RECORD_ID_PREFIX.length));
+	if (!providerFromId) {
+		return undefined;
+	}
+	const declaredProvider = canonicalizeProvider(getModelProviderId(model));
+	if (declaredProvider && declaredProvider !== providerFromId) {
+		return undefined;
+	}
+	return providerFromId;
+}
+
+function mergeDefinedValues(base: HFModelItem, override: HFModelItem): HFModelItem {
+	const merged: Record<string, unknown> = { ...base };
+	for (const [key, value] of Object.entries(override)) {
+		if (value !== undefined) {
+			merged[key] = value;
+		}
+	}
+	return merged as unknown as HFModelItem;
+}
+
+/**
+ * Convert legacy provider records in place, and fold a legacy record into an
+ * explicit provider record instead of producing two metadata records for the
+ * same provider, which validation rejects.
+ */
+function adoptLegacyProviderRecords(models: HFModelItem[]): HFModelItem[] {
+	const adopted: HFModelItem[] = [];
+	const placeholderIndexByProvider = new Map<string, number>();
+
+	for (const model of models) {
+		const legacyProvider = getLegacyProviderRecordProvider(model);
+		const explicit = isProviderPlaceholder(model);
+		if (!legacyProvider && !explicit) {
+			adopted.push(model);
+			continue;
+		}
+
+		const provider = legacyProvider ?? canonicalizeProvider(model.owned_by);
+		const placeholder = legacyProvider
+			? normalizeConfiguredModel({
+					...model,
+					id: `${PROVIDER_RECORD_ID_PREFIX}${provider}`,
+					owned_by: provider,
+					providerConfig: true,
+				})
+			: model;
+
+		const existingIndex = placeholderIndexByProvider.get(provider);
+		if (existingIndex === undefined) {
+			placeholderIndexByProvider.set(provider, adopted.length);
+			adopted.push(placeholder);
+			continue;
+		}
+		// An explicit provider record wins; an adopted legacy record only fills gaps.
+		adopted[existingIndex] = explicit
+			? mergeDefinedValues(adopted[existingIndex], placeholder)
+			: mergeDefinedValues(placeholder, adopted[existingIndex]);
+	}
+
+	return adopted;
+}
+
 export function normalizeConfiguredModel(model: HFModelItem): HFModelItem {
 	const rawProvider = getModelProviderId(model);
 	const provider = canonicalizeProvider(rawProvider);
@@ -112,7 +197,7 @@ export function migrateLegacyModelMetadata(
 	createDefaultProvider = false
 ): HFModelItem[] {
 	const fallbackBaseUrl = legacyBaseUrl.trim();
-	const normalized = models.map(normalizeConfiguredModel);
+	const normalized = adoptLegacyProviderRecords(models.map(normalizeConfiguredModel));
 
 	if (normalized.length === 0 && createDefaultProvider) {
 		normalized.push(
