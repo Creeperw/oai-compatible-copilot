@@ -1,7 +1,11 @@
 # Change Log
 
+> This project is a fork of [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot), published as **PolyLLM** (`creeperw.polyllm`). Entries below 0.4.3 come from the upstream project.
+
 ## 0.4.3
 
+- Fork: Republished as PolyLLM (`creeperw.polyllm`). Configuration (`oaicopilot.*`) and all provider/model IDs are unchanged, so existing setups keep working — but uninstall the original extension first, since two extensions cannot share the chat provider vendor and VS Code silently keeps whichever loads first.
+- Fix: Read the extension version from the extension context instead of a hardcoded extension ID, which would have reported `unknown` once the ID changed.
 - Add provider-aware model identity so different providers can expose the same upstream Model ID while Display Names remain globally unique.
 - Move Base URL, API mode, headers, and API keys to provider-level configuration with explicit model overrides and safe legacy migration.
 - Remove the global Base URL/API key controls and restrict model endpoints to trusted user-level application settings.

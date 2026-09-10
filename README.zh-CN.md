@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="OAICopilot Logo" width="120" height="120">
+<img src="assets/logo.png" alt="PolyLLM Logo" width="120" height="120">
 
-# OAI Compatible Provider for Copilot
+# PolyLLM
 
 **在 VS Code 的 GitHub Copilot Chat 中使用任意 OpenAI/Ollama/Anthropic/Gemini API兼容供应商** 🔥
 
@@ -10,8 +10,11 @@
 
 </div>
 
-[![CI](https://github.com/JohnnyZ93/oai-compatible-copilot/actions/workflows/release.yml/badge.svg)](https://github.com/JohnnyZ93/oai-compatible-copilot/actions)
-[![License](https://img.shields.io/github/license/JohnnyZ93/oai-compatible-copilot?color=orange&label=License)](https://github.com/JohnnyZ93/oai-compatible-copilot/blob/main/LICENSE)
+> **PolyLLM** 是 [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot)（作者 Johnny Zhao，MIT 许可）的 fork。
+> 它保留原有的配置格式（`oaicopilot.*` 设置与供应商 ID），因此已有配置可继续使用。
+
+[![CI](https://github.com/Creeperw/oai-compatible-copilot/actions/workflows/release.yml/badge.svg)](https://github.com/Creeperw/oai-compatible-copilot/actions)
+[![License](https://img.shields.io/github/license/Creeperw/oai-compatible-copilot?color=orange&label=License)](https://github.com/Creeperw/oai-compatible-copilot/blob/main/LICENSE)
 
 ## ✨ 特性
 - **多 API 支持**：OpenAI/Ollama/Anthropic/Gemini API（ModelScope、SiliconFlow、DeepSeek 等）
@@ -31,8 +34,8 @@
 - OpenAI 兼容供应商的 API 密钥。
 
 ## ⚡ 快速开始
-1. [在此处](https://marketplace.visualstudio.com/items?itemName=johnny-zhao.oai-compatible-copilot)安装 OAI Compatible Provider for Copilot 扩展。
-2. 从命令面板运行 **OAICopilot: Open Configuration UI**。
+1. [在此处](https://marketplace.visualstudio.com/items?itemName=creeperw.polyllm)安装 PolyLLM 扩展。
+2. 从命令面板运行 **PolyLLM: Open Configuration UI**。
 3. 添加供应商，并填写其 Base URL、API Key 和 API 模式。
 4. 添加模型，为每个模型填写全局唯一的 Display Name。
 5. 打开 GitHub Copilot Chat 并选择配置好的模型。
@@ -72,11 +75,11 @@
 
 1. **通过命令面板**：
    - 按 `Ctrl+Shift+P`（macOS 上按 `Cmd+Shift+P`）
-   - 搜索 "OAICopilot: Open Configuration UI"
+   - 搜索 "PolyLLM: Open Configuration UI"
    - 选择该命令打开配置面板
 
 2. **通过状态栏**：
-   - 点击 VS Code 右下角的 "OAICopilot" 状态栏项
+   - 点击 VS Code 右下角的 "PolyLLM" 状态栏项
 
 <details>
 <summary>点击展开详情</summary>
@@ -103,7 +106,7 @@
    - 打开 GitHub Copilot Chat（`Ctrl+Shift+I` 或 `Cmd+Shift+I`）
    - 点击对话输入框的模型选择器
    - 选择 "Manage Models..."
-   - 选择 "OAI Compatible" 供应商
+   - 选择 "PolyLLM" 供应商
    - 选择已配置的模型
    - 开始与模型对话！
 
@@ -220,10 +223,10 @@ VS Code Copilot 针对特定模型优化了系统提示词。[详细介绍](http
 > 模型配置中的 `owned_by`（别名：`provider` / `provide`）用于分组供应商特定的 API 密钥。存储键为 `oaicopilot.apiKey.<providerId小写>`。
 
 1. 打开 VS Code 设置，配置 `oaicopilot.models`。
-2. 打开命令中心（Ctrl+Shift+P），搜索 "OAICopilot: Set OAI Compatible Multi-Provider API Key" 来配置各供应商的 API 密钥。
+2. 打开命令中心（Ctrl+Shift+P），搜索 "PolyLLM: Set Multi-Provider API Key" 来配置各供应商的 API 密钥。
 3. 打开 GitHub Copilot Chat 界面。
 4. 点击模型选择器，选择 "Manage Models..."。
-5. 选择 "OAI Compatible" 供应商。
+5. 选择 "PolyLLM" 供应商。
 6. 选择你想添加到模型选择器中的模型。
 
 <details>
@@ -518,10 +521,11 @@ VS Code 不会向语言模型供应商暴露会话标识，因此本扩展会从
 
 感谢所有贡献者。
 
-- [贡献者](https://github.com/JohnnyZ93/oai-compatible-copilot/graphs/contributors)
+- [贡献者](https://github.com/Creeperw/oai-compatible-copilot/graphs/contributors)
 - [Hugging Face Chat 扩展](https://github.com/huggingface/huggingface-vscode-chat)
 - [VS Code Chat Provider API](https://code.visualstudio.com/api/extension-guides/ai/language-model-chat-provider)
 
 ## 支持 & 许可证
-- 提交 Issue：https://github.com/JohnnyZ93/oai-compatible-copilot/issues
+- 提交 Issue：https://github.com/Creeperw/oai-compatible-copilot/issues
 - 许可证：MIT License Copyright (c) 2025 Johnny Zhao
+- 本 fork 由 Creeperw 维护。按 MIT 许可证要求，上方原始版权声明予以保留。

@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="OAICopilot Logo" width="120" height="120">
+<img src="assets/logo.png" alt="PolyLLM Logo" width="120" height="120">
 
-# OAI Compatible Provider for Copilot
+# PolyLLM
 
 **A VSCode extension to use OpenAI/Ollama/Anthropic/Gemini API Providers in GitHub Copilot Chat** 🔥
 
@@ -10,8 +10,11 @@ English | [简体中文](README.zh-CN.md)
 
 </div>
 
-[![CI](https://github.com/JohnnyZ93/oai-compatible-copilot/actions/workflows/release.yml/badge.svg)](https://github.com/JohnnyZ93/oai-compatible-copilot/actions)
-[![License](https://img.shields.io/github/license/JohnnyZ93/oai-compatible-copilot?color=orange&label=License)](https://github.com/JohnnyZ93/oai-compatible-copilot/blob/main/LICENSE)
+> **PolyLLM** is a fork of [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot) by Johnny Zhao (MIT).
+> It keeps the original configuration format (`oaicopilot.*` settings and provider IDs), so existing setups continue to work.
+
+[![CI](https://github.com/Creeperw/oai-compatible-copilot/actions/workflows/release.yml/badge.svg)](https://github.com/Creeperw/oai-compatible-copilot/actions)
+[![License](https://img.shields.io/github/license/Creeperw/oai-compatible-copilot?color=orange&label=License)](https://github.com/Creeperw/oai-compatible-copilot/blob/main/LICENSE)
 
 ## ✨ Features
 - **Multi-API support**: OpenAI/Ollama/Anthropic/Gemini APIs (ModelScope, SiliconFlow, DeepSeek...)
@@ -31,8 +34,8 @@ English | [简体中文](README.zh-CN.md)
 - OpenAI-compatible provider API key.
 
 ## ⚡ Quick Start
-1. Install the OAI Compatible Provider for Copilot extension [here](https://marketplace.visualstudio.com/items?itemName=johnny-zhao.oai-compatible-copilot).
-2. Run **OAICopilot: Open Configuration UI** from the Command Palette.
+1. Install the PolyLLM extension [here](https://marketplace.visualstudio.com/items?itemName=creeperw.polyllm).
+2. Run **PolyLLM: Open Configuration UI** from the Command Palette.
 3. Add a provider with its Base URL, API Key, and API mode.
 4. Add one or more models with globally unique Display Names.
 5. Open GitHub Copilot Chat and select the configured model.
@@ -72,11 +75,11 @@ There are two ways to open the configuration interface:
 
 1. **From the Command Palette**:
    - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
-   - Search for "OAICopilot: Open Configuration UI"
+   - Search for "PolyLLM: Open Configuration UI"
    - Select the command to open the configuration panel
 
 2. **From the Status Bar**:
-   - Click on the "OAICopilot" status bar item in the bottom-right corner of VS Code
+   - Click on the "PolyLLM" status bar item in the bottom-right corner of VS Code
 
 <details>
 <summary>Click Here for Details</summary>
@@ -103,7 +106,7 @@ There are two ways to open the configuration interface:
    - Open GitHub Copilot Chat (`Ctrl+Shift+I` or `Cmd+Shift+I`)
    - Click the model picker in the chat input
    - Select "Manage Models..."
-   - Choose "OAI Compatible" provider
+   - Choose "PolyLLM" provider
    - Select your configured models
    - Start chatting with the model!
 
@@ -220,10 +223,10 @@ Mixed configuration with multiple API modes:
 > `owned_by` (alias: `provider` / `provide`) in model config is used for grouping provider-specific API keys. The storage key is `oaicopilot.apiKey.<providerIdLowercase>`.
 
 1. Open VS Code Settings and configure `oaicopilot.models`.
-2. Open command center ( Ctrl+Shift+P ), and search "OAICopilot: Set OAI Compatible Multi-Provider API Key" to configure provider-specific API keys.
+2. Open command center ( Ctrl+Shift+P ), and search "PolyLLM: Set Multi-Provider API Key" to configure provider-specific API keys.
 3. Open GitHub Copilot Chat interface.
 4. Click the model picker and select "Manage Models...".
-5. Choose "OAI Compatible" provider.
+5. Choose "PolyLLM" provider.
 6. Select the models you want to add to the model picker.
 
 <details>
@@ -518,10 +521,11 @@ All parameters support individual configuration for different models, providing 
 
 Thanks to all the people who contribute.
 
-- [Contributors](https://github.com/JohnnyZ93/oai-compatible-copilot/graphs/contributors)
+- [Contributors](https://github.com/Creeperw/oai-compatible-copilot/graphs/contributors)
 - [Hugging Face Chat Extension](https://github.com/huggingface/huggingface-vscode-chat)
 - [VS Code Chat Provider API](https://code.visualstudio.com/api/extension-guides/ai/language-model-chat-provider)
 
 ## Support & License
-- Open issues: https://github.com/JohnnyZ93/oai-compatible-copilot/issues
+- Open issues: https://github.com/Creeperw/oai-compatible-copilot/issues
 - License: MIT License Copyright (c) 2025 Johnny Zhao
+- This fork is maintained by Creeperw. The original copyright notice above is preserved as required by the MIT License.
