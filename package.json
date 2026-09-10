@@ -1,29 +1,40 @@
 {
-	"name": "oai-compatible-copilot",
-	"publisher": "johnny-zhao",
-	"displayName": "OAI Compatible Provider for Copilot",
-	"description": "An extension that integrates OpenAI/Ollama/Anthropic/Gemini API Providers into GitHub Copilot Chat",
+	"name": "polyllm",
+	"publisher": "creeperw",
+	"displayName": "PolyLLM: Custom LLM Provider for Copilot Chat (Ollama, OpenAI, BYOK)",
+	"description": "Connect Ollama, OpenAI, Anthropic, Claude, Gemini, DeepSeek and any OpenAI-compatible API to GitHub Copilot Chat. Bring your own key, custom models, per-provider Base URL, headers and session-aware routing.",
 	"icon": "assets/logo.png",
 	"keywords": [
 		"ai",
 		"chat",
 		"copilot",
 		"github-copilot",
+		"copilot-chat",
 		"language-model",
 		"llm",
+		"llm-provider",
+		"model-provider",
+		"custom-model",
+		"byok",
 		"openai",
+		"openai-compatible",
+		"openai-responses",
 		"ollama",
+		"local-llm",
 		"anthropic",
 		"claude",
 		"gemini",
-		"openai-compatible",
-		"openai-responses",
-		"git-commit",
-		"thinking"
+		"deepseek",
+		"openrouter",
+		"vllm",
+		"lm-studio",
+		"provider",
+		"thinking",
+		"git-commit"
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/JohnnyZ93/oai-compatible-copilot"
+		"url": "https://github.com/Creeperw/oai-compatible-copilot"
 	},
 	"version": "0.4.3",
 	"engines": {
@@ -35,13 +46,13 @@
 	],
 	"badges": [
 		{
-			"url": "https://img.shields.io/github/stars/JohnnyZ93/oai-compatible-copilot?style=social",
-			"description": "Star oai-compatible-copilot on Github",
-			"href": "https://github.com/JohnnyZ93/oai-compatible-copilot"
+			"url": "https://img.shields.io/github/stars/Creeperw/oai-compatible-copilot?style=social",
+			"description": "Star this fork on Github",
+			"href": "https://github.com/Creeperw/oai-compatible-copilot"
 		}
 	],
 	"bugs": {
-		"url": "https://github.com/JohnnyZ93/oai-compatible-copilot/issues"
+		"url": "https://github.com/Creeperw/oai-compatible-copilot/issues"
 	},
 	"license": "MIT",
 	"enabledApiProposals": [
@@ -51,31 +62,31 @@
 		"languageModelChatProviders": [
 			{
 				"vendor": "oaicopilot",
-				"displayName": "OAI Compatible",
+				"displayName": "PolyLLM",
 				"managementCommand": "oaicopilot.openConfig"
 			}
 		],
 		"commands": [
 			{
 				"command": "oaicopilot.setProviderApikey",
-				"category": "OAICopilot",
-				"title": "Set OAI Compatible Multi-Provider Apikey"
+				"category": "PolyLLM",
+				"title": "Set Multi-Provider API Key"
 			},
 			{
 				"command": "oaicopilot.openConfig",
-				"category": "OAICopilot",
+				"category": "PolyLLM",
 				"title": "Open Configuration UI"
 			},
 			{
 				"command": "oaicopilot.generateGitCommitMessage",
-				"title": "Generate Commit Message with OAICopilot",
-				"category": "OAICopilot",
+				"title": "Generate Commit Message",
+				"category": "PolyLLM",
 				"icon": "$(wand)"
 			},
 			{
 				"command": "oaicopilot.abortGitCommitMessage",
-				"title": "Generate Commit Message with OAICopilot - Stop",
-				"category": "OAICopilot",
+				"title": "Generate Commit Message - Stop",
+				"category": "PolyLLM",
 				"icon": "$(debug-stop)"
 			}
 		],
@@ -104,7 +115,7 @@
 			]
 		},
 		"configuration": {
-			"title": "OAI Compatible Copilot",
+			"title": "PolyLLM",
 			"properties": {
 				"oaicopilot.logLevel": {
 					"type": "string",
@@ -187,7 +198,7 @@
 							},
 							"providerConfig": {
 								"type": "boolean",
-								"description": "Internal provider connection metadata marker. Configure providers through the OAICopilot Configuration UI."
+								"description": "Internal provider connection metadata marker. Configure providers through the PolyLLM Configuration UI."
 							},
 							"configId": {
 								"type": "string",

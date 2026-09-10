@@ -73,7 +73,7 @@ suite("modelConfiguration", () => {
 
 			assert.ok(info, "deepseek-v4-flash should be registered");
 			assert.strictEqual(info.name, "DeepSeek V4 Flash");
-			assert.strictEqual(info.detail, "deepseek (OAICopilot)");
+			assert.strictEqual(info.detail, "deepseek (PolyLLM)");
 			assert.strictEqual(info.isUserSelectable, true);
 			assert.strictEqual(info.isBYOK, true);
 			assert.deepStrictEqual(info.configurationSchema, createReasoningEffortConfigurationSchema("medium"));

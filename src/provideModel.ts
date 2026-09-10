@@ -16,7 +16,7 @@ import { logger } from "./logger";
 
 const DEFAULT_CONTEXT_LENGTH = 128000;
 const DEFAULT_MAX_TOKENS = 4096;
-const EXTENSION_LABEL = "OAICopilot";
+const EXTENSION_LABEL = "PolyLLM";
 
 /**
  * Get the list of available language models contributed by this provider
@@ -35,7 +35,7 @@ export async function prepareLanguageModelChatInformation(
 		if (options.silent) {
 			return [];
 		}
-		throw new Error("No models configured. Add a provider and model in OAICopilot Configuration.");
+		throw new Error("No models configured. Add a provider and model in PolyLLM Configuration.");
 	}
 	assertValidModelCollection(userModels);
 
@@ -104,12 +104,12 @@ export async function fetchModels(
 			try {
 				text = await resp.text();
 			} catch (error) {
-				console.error("[OAI Compatible Model Provider] Failed to read response text", error);
+				console.error("[PolyLLM] Failed to read response text", error);
 			}
 			const err = new Error(
-				`Failed to fetch OAI Compatible models: ${resp.status} ${resp.statusText}${text ? `\n${text}` : ""}`
+				`Failed to fetch PolyLLM models: ${resp.status} ${resp.statusText}${text ? `\n${text}` : ""}`
 			);
-			console.error("[OAI Compatible Model Provider] Failed to fetch OAI Compatible models", err);
+			console.error("[PolyLLM] Failed to fetch PolyLLM models", err);
 			throw err;
 		}
 		const parsed = (await resp.json()) as HFModelsResponse;
@@ -121,7 +121,7 @@ export async function fetchModels(
 		return { models };
 	} catch (err) {
 		const errorObj = err instanceof Error ? err : new Error(String(err));
-		console.error("[OAI Compatible Model Provider] Failed to fetch OAI Compatible models", err);
+		console.error("[PolyLLM] Failed to fetch PolyLLM models", err);
 		logger.error("models.fetch.error", { baseUrl, error: errorObj.message });
 		throw err;
 	}

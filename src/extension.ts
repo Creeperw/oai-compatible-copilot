@@ -7,6 +7,7 @@ import { getGlobalUserModels } from "./utils";
 import { assertValidModelCollection, canonicalizeProvider, migrateLegacyModelMetadata } from "./modelIdentity";
 import { abortCommitGeneration, generateCommitMsg } from "./gitCommit/commitMessageGenerator";
 import { TokenizerManager } from "./tokenizer/tokenizerManager";
+import { VersionManager } from "./versionManager";
 
 const PROVIDER_CONFIG_MIGRATION_KEY = "oaicopilot.providerConfigMigration.v2";
 const LEGACY_DEFAULT_BASE_URL = "https://router.huggingface.co/v1";
@@ -15,6 +16,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Initialize logger
 	logger.init();
 	await migrateLegacyGlobalConfiguration(context);
+
+	// Capture this extension's own identity; the ID depends on publisher and name
+	VersionManager.initialize(context);
 
 	// Initialize TokenizerManager with extension path
 	TokenizerManager.initialize(context.extensionPath);
@@ -59,7 +63,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// Prompt for API key
 			const apiKey = await vscode.window.showInputBox({
-				title: `OAI Compatible API Key for ${selectedProvider}`,
+				title: `PolyLLM API Key for ${selectedProvider}`,
 				prompt: existing ? `Update API key for ${selectedProvider}` : `Enter API key for ${selectedProvider}`,
 				ignoreFocusOut: true,
 				password: true,
@@ -138,7 +142,7 @@ async function migrateLegacyGlobalConfiguration(context: vscode.ExtensionContext
 	} catch (error) {
 		const details = error instanceof Error ? error.message : String(error);
 		void vscode.window.showErrorMessage(
-			`OAICopilot could not migrate the legacy global connection settings. The legacy Base URL and API key were kept unchanged. Resolve the model identity conflicts and reload VS Code. ${details}`
+			`PolyLLM could not migrate the legacy global connection settings. The legacy Base URL and API key were kept unchanged. Resolve the model identity conflicts and reload VS Code. ${details}`
 		);
 		return;
 	}

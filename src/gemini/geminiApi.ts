@@ -1080,7 +1080,7 @@ export async function fetchGeminiModels(
 			try {
 				errorText = await resp.text();
 			} catch (error) {
-				console.error("[OAI Compatible Model Provider] Failed to read response text", error);
+				console.error("[PolyLLM] Failed to read response text", error);
 			}
 			throw new Error(
 				`Gemini API error: [${resp.status}] ${resp.statusText}${errorText ? `\n${errorText}` : ""}\nURL: ${url.toString()}`

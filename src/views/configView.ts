@@ -132,7 +132,7 @@ export class ConfigViewPanel {
 
 		const panel = vscode.window.createWebviewPanel(
 			"oaicopilot.config",
-			"OAICopilot Configuration",
+			"PolyLLM Configuration",
 			column || vscode.ViewColumn.One,
 			{
 				enableScripts: true,
@@ -397,7 +397,7 @@ export class ConfigViewPanel {
 		});
 		await config.update("oaicopilot.models", updatedModels, vscode.ConfigurationTarget.Global);
 
-		vscode.window.showInformationMessage("OAICopilot global behavior settings have been saved.");
+		vscode.window.showInformationMessage("PolyLLM global behavior settings have been saved.");
 		// Send refresh signal to frontend
 		await this.sendInit();
 	}
@@ -657,7 +657,7 @@ export class ConfigViewPanel {
 			const uri = await vscode.window.showSaveDialog({
 				defaultUri: vscode.Uri.file(`oaicopilot-config-${new Date().toISOString().split("T")[0]}.json`),
 				filters: { "JSON Files": ["json"] },
-				title: "Export OAICopilot Configuration",
+				title: "Export PolyLLM Configuration",
 			});
 
 			if (!uri) {
@@ -683,7 +683,7 @@ export class ConfigViewPanel {
 				canSelectFolders: false,
 				canSelectMany: false,
 				filters: { "JSON Files": ["json"] },
-				title: "Import OAICopilot Configuration",
+				title: "Import PolyLLM Configuration",
 			});
 
 			if (!uri || uri.length === 0) {

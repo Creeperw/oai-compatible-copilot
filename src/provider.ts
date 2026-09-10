@@ -107,7 +107,7 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 				try {
 					progress.report(part);
 				} catch (e) {
-					console.error("[OAI Compatible Model Provider] Progress.report failed", {
+					console.error("[PolyLLM] Progress.report failed", {
 						modelId: model.id,
 						error: e instanceof Error ? { name: e.name, message: e.message } : String(e),
 					});
@@ -481,9 +481,9 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 
 					if (!res.ok) {
 						const errorText = await res.text();
-						console.error("[OAI Compatible Model Provider] OAI Compatible API error response", errorText);
+						console.error("[PolyLLM] API error response", errorText);
 						throw new Error(
-							`OAI Compatible API error: [${res.status}] ${res.statusText}${errorText ? `\n${errorText}` : ""}\nURL: ${url}`
+							`PolyLLM API error: [${res.status}] ${res.statusText}${errorText ? `\n${errorText}` : ""}\nURL: ${url}`
 						);
 					}
 
@@ -491,12 +491,12 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 				}, retryConfig);
 
 				if (!response.body) {
-					throw new Error("No response body from OAI Compatible API");
+					throw new Error("No response body from PolyLLM API");
 				}
 				await openaiApi.processStreamingResponse(response.body, trackingProgress, token);
 			}
 		} catch (err) {
-			console.error("[OAI Compatible Model Provider] Chat request failed", {
+			console.error("[PolyLLM] Chat request failed", {
 				modelId: model.id,
 				messageCount: messages.length,
 				error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
@@ -530,8 +530,8 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 		let apiKey = await getProviderApiKey(this.secrets, normalizedProvider, aliases);
 		if (!apiKey) {
 			const entered = await vscode.window.showInputBox({
-				title: `OAI Compatible API Key for ${normalizedProvider}`,
-				prompt: `Enter your OAI Compatible API key for ${normalizedProvider}`,
+				title: `PolyLLM API Key for ${normalizedProvider}`,
+				prompt: `Enter your PolyLLM API key for ${normalizedProvider}`,
 				ignoreFocusOut: true,
 				password: true,
 			});

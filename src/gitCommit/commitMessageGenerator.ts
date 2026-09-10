@@ -200,7 +200,7 @@ async function performCommitMsgGeneration(secrets: vscode.SecretStorage, gitDiff
 		// Get API key for the model's provider
 		const apiKey = await ensureApiKey(secrets, selectedModel.owned_by);
 		if (!apiKey) {
-			throw new Error("OAI Compatible API key not found");
+			throw new Error("PolyLLM API key not found");
 		}
 
 		// Get base URL for the model
