@@ -2,6 +2,10 @@
 
 > This project is a fork of [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot), published as **PolyLLM** (`creeperw.polyllm`). Entries below 0.4.3 come from the upstream project.
 
+## 0.4.4
+
+- Update the extension icon.
+
 ## 0.4.3
 
 - Fork: Republished as PolyLLM (`creeperw.polyllm`). Configuration (`oaicopilot.*`) and all provider/model IDs are unchanged, so existing setups keep working — but uninstall the original extension first, since two extensions cannot share the chat provider vendor and VS Code silently keeps whichever loads first.
