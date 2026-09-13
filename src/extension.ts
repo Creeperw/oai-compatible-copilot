@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { t } from "./i18n";
 import { HuggingFaceChatModelProvider } from "./provider";
 import { initStatusBar } from "./statusBar";
 import { ConfigViewPanel } from "./views/configView";
@@ -8,6 +9,8 @@ import { assertValidModelCollection, canonicalizeProvider, migrateLegacyModelMet
 import { abortCommitGeneration, generateCommitMsg } from "./gitCommit/commitMessageGenerator";
 import { TokenizerManager } from "./tokenizer/tokenizerManager";
 import { VersionManager } from "./versionManager";
+import { BalanceService } from "./balance/service";
+import { initBalanceStatusBar, showProviderBalances } from "./balance/ui";
 
 const PROVIDER_CONFIG_MIGRATION_KEY = "oaicopilot.providerConfigMigration.v2";
 const LEGACY_DEFAULT_BASE_URL = "https://router.huggingface.co/v1";
@@ -24,7 +27,15 @@ export async function activate(context: vscode.ExtensionContext) {
 	TokenizerManager.initialize(context.extensionPath);
 
 	const tokenCountStatusBarItem: vscode.StatusBarItem = initStatusBar(context);
-	const provider = new HuggingFaceChatModelProvider(context.secrets, tokenCountStatusBarItem);
+
+	// Provider balance queries: the service owns the snapshots, the status bar and
+	// the command palette read from it.
+	const balanceService = new BalanceService(context.secrets);
+	context.subscriptions.push(balanceService);
+	initBalanceStatusBar(context, balanceService);
+	balanceService.start();
+
+	const provider = new HuggingFaceChatModelProvider(context.secrets, tokenCountStatusBarItem, balanceService);
 	// Register the Hugging Face provider under the vendor id used in package.json
 	vscode.lm.registerLanguageModelChatProvider("oaicopilot", provider);
 
@@ -41,9 +52,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			).sort();
 
 			if (providers.length === 0) {
-				vscode.window.showErrorMessage(
-					"No providers found in oaicopilot.models configuration. Please configure models first."
-				);
+				vscode.window.showErrorMessage(t("host.noProviders"));
 				return;
 			}
 
@@ -76,18 +85,33 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			if (!apiKey.trim()) {
 				await context.secrets.delete(providerKey);
-				vscode.window.showInformationMessage(`API key for ${selectedProvider} cleared.`);
+				vscode.window.showInformationMessage(t("host.apiKeyCleared", selectedProvider));
 				return;
 			}
 
 			await context.secrets.store(providerKey, apiKey.trim());
-			vscode.window.showInformationMessage(`API key for ${selectedProvider} saved.`);
+			vscode.window.showInformationMessage(t("host.apiKeySaved", selectedProvider));
 		})
 	);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("oaicopilot.openConfig", async () => {
-			ConfigViewPanel.openPanel(context.extensionUri, context.secrets);
+			ConfigViewPanel.openPanel(context.extensionUri, context.secrets, balanceService);
+		})
+	);
+
+	// Provider balance queries
+	context.subscriptions.push(
+		vscode.commands.registerCommand("oaicopilot.showBalances", async () => {
+			await showProviderBalances(balanceService);
+		}),
+		vscode.commands.registerCommand("oaicopilot.refreshBalances", async () => {
+			await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: "Refreshing PolyLLM provider balances…" },
+				async () => {
+					await balanceService.refreshAll();
+				}
+			);
 		})
 	);
 
@@ -106,6 +130,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (e.affectsConfiguration("oaicopilot.logLevel")) {
 				logger.reloadConfig();
+			}
+			if (e.affectsConfiguration("oaicopilot.models")) {
+				// A provider may have been renamed or removed; drop snapshots that no
+				// longer belong to a configured provider.
+				balanceService.invalidate();
 			}
 		})
 	);
@@ -141,9 +170,7 @@ async function migrateLegacyGlobalConfiguration(context: vscode.ExtensionContext
 		assertValidModelCollection(migratedModels);
 	} catch (error) {
 		const details = error instanceof Error ? error.message : String(error);
-		void vscode.window.showErrorMessage(
-			`PolyLLM could not migrate the legacy global connection settings. The legacy Base URL and API key were kept unchanged. Resolve the model identity conflicts and reload VS Code. ${details}`
-		);
+		void vscode.window.showErrorMessage(t("host.migrationFailed", details));
 		return;
 	}
 

@@ -35,6 +35,7 @@ import type { GeminiGenerateContentRequest } from "./gemini/geminiTypes";
 import { CommonApi } from "./commonApi";
 import { logger } from "./logger";
 import { computeSessionId } from "./sessionId";
+import type { BalanceService } from "./balance/service";
 
 /**
  * VS Code Chat provider backed by Hugging Face Inference Providers.
@@ -51,10 +52,13 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 	/**
 	 * Create a provider using the given secret storage for the API key.
 	 * @param secrets VS Code secret storage.
+	 * @param statusBarItem Status bar item showing token usage.
+	 * @param balanceService Optional balance tracker, notified of the provider in use.
 	 */
 	constructor(
 		private readonly secrets: vscode.SecretStorage,
-		private readonly statusBarItem: vscode.StatusBarItem
+		private readonly statusBarItem: vscode.StatusBarItem,
+		private readonly balanceService?: BalanceService
 	) {}
 
 	/**
@@ -166,6 +170,8 @@ export class HuggingFaceChatModelProvider implements LanguageModelChatProvider {
 
 			// Get API key for the model's provider
 			const provider = um.owned_by;
+			// Remember which provider is in use so the balance status bar can follow it.
+			this.balanceService?.setActiveProvider(provider);
 			const modelApiKey = await this.ensureApiKey(provider);
 			if (!modelApiKey) {
 				logger.warn("apiKey.missing", {

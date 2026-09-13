@@ -9,6 +9,9 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
+# Compiled tests. They only run from the workspace, so shipping them would add
+# weight to every install for nothing.
+out/test/**
 .github/**
 .prettierignore
 .vscode-test.mjs

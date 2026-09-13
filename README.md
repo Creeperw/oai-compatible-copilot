@@ -25,6 +25,7 @@ English | [简体中文](README.zh-CN.md)
 - **Visual configuration UI**: Intuitive interface for managing providers and models
 - **Auto-retry**: Handles API errors (429, 500, 502, 503, 504) with exponential backoff
 - **Token usage**: Real-time token counting and provider API key management from status bar
+- **Provider balance**: Query and display the remaining credit of each provider, with built-in presets for DeepSeek, SiliconFlow, OpenRouter, StepFun, Novita AI, New API relays, and the Kimi, Zhipu GLM, MiniMax, and OpenCode Go coding plans
 - **Git integration**: Generate commit messages directly from source control
 - **Import/export**: Easily share and backup configurations
 - **Tools optimization**: Optimize agent `read_file` tool handling, avoid to read small chunks for large file.
@@ -80,6 +81,10 @@ There are two ways to open the configuration interface:
 
 2. **From the Status Bar**:
    - Click on the "PolyLLM" status bar item in the bottom-right corner of VS Code
+
+### Language
+
+The interface is available in English and Simplified Chinese. It follows the VS Code display language by default; the picker in the panel header switches it immediately, and `oaicopilot.language` (`auto`, `en`, `zh-CN`) does the same from the settings page. Switching the language keeps whatever you have typed into the tables. The command palette entries and the settings page follow the same choice.
 
 <details>
 <summary>Click Here for Details</summary>
@@ -363,6 +368,96 @@ VS Code does not expose a conversation identifier to language model providers, s
 - You can also set it in the Configuration UI, in the **Session ID Header** column of the Providers table.
 - The value is a UUID-shaped SHA-256 hash of the first user turn, so no conversation content leaves the machine in the header.
 - VS Code does not expose a conversation ID, so two conversations that start with an identical first user message share a session ID.
+
+</details>
+
+## ✨ Provider balance
+
+PolyLLM can query how much credit is left on a provider and show it in the status bar, so you notice a nearly empty account before a request fails.
+
+Balance querying is opt-in and configured per provider. Nothing is requested until you enable it for a provider, and the default refresh mode is manual.
+
+<details>
+<summary>Click Here for Details</summary>
+
+### Enabling it
+
+1. Run **PolyLLM: Open Configuration UI**.
+2. In the Providers table, click the ⚙ button in the **Balance** column.
+3. Tick **Enable balance query** and pick a preset, or describe a custom endpoint. Picking a preset ticks the box for you.
+4. Click **Test** to run the query once and see the result, then **Save**.
+
+Once enabled, the balance appears in the status bar while that provider is in use, and **PolyLLM: Show Provider Balances** lists every configured provider.
+
+The **Balance** column distinguishes three states: `Not set` (nothing configured), `Disabled` (a query is saved but switched off), and the value itself once it has been queried. A saved query stays in the panel and survives reopening the configuration UI.
+
+### Built-in presets
+
+| Preset | Endpoint | Notes |
+| --- | --- | --- |
+| DeepSeek | `GET {{baseUrl}}/user/balance` | Reports the balance per currency |
+| SiliconFlow (China) | `GET {{baseUrl}}/user/info` | Total balance in CNY |
+| SiliconFlow (International) | `GET {{baseUrl}}/user/info` | Same endpoint on the international site, reporting USD |
+| OpenRouter | `GET {{baseUrl}}/credits` | Computes remaining from credits minus usage |
+| StepFun | `GET {{origin}}/v1/accounts` | Balance in CNY |
+| Novita AI | `GET {{origin}}/v3/user/balance` | The endpoint reports 0.0001 USD units, which the preset converts |
+| New API | `GET {{origin}}/api/user/self` | For relays built on New API; quota is converted with `/ 500000` |
+| Kimi For Coding | `GET {{baseUrl}}/v1/usages` | Reads the overall plan window as a percentage |
+| Zhipu GLM | `GET {{origin}}/api/monitor/usage/quota/limit` | Reads the 5-hour window as a percentage. The key goes in `Authorization` with no `Bearer` prefix |
+| MiniMax | `GET {{origin}}/v1/api/openplatform/coding_plan/remains` | Reads the 5-hour window as a percentage |
+| OpenCode Go | `GET https://opencode.ai/zen/go/v1/usage` | Reads the rolling 5-hour window as a percentage |
+
+Anything else can be configured by hand: the endpoint, the HTTP method, the authentication style, extra headers, and the response fields.
+
+#### Coding plans report percentages, not money
+
+A subscription plan has no balance to report — Kimi, Zhipu GLM, MiniMax, and OpenCode Go answer with how much of a rolling window is left. Those presets express the window as a percentage out of a total of 100, so a plan and a balance can sit in the same column and share the same low-balance colouring. Each preset reads the shortest window, because that is the one that stops you working; point the Remaining expression at another window if you would rather watch the weekly or monthly one.
+
+OpenCode Zen (pay as you go) publishes no balance or usage API at all, so it cannot be queried. OpenCode Go is a separate route with its own subscription.
+
+### Describing the response
+
+The response fields are JSON paths, with optional arithmetic. No code is executed, so a configuration can never run anything on your machine.
+
+| Field | Meaning | Example |
+| --- | --- | --- |
+| Remaining | Required. The value shown as the balance. | `balance_infos[0].total_balance` |
+| Unit | Currency or unit label | `balance_infos[0].currency` or `"CNY"` |
+| Total | Starting or granted amount, used to grade low-balance warnings | `(data.quota + data.used_quota) / 500000` |
+| Used | Amount already spent | `data.used_quota / 500000` |
+| Plan name | Subscription or plan label | `data.group` |
+| Extra | Any short note shown in the tooltip | `data.expires_at` |
+
+Supported syntax: `a.b`, `a[0].b`, `["odd key"]`, `+ - * /`, parentheses, and quoted literals such as `"USD"`. A bare word is treated as a literal, so `CNY` works without quotes.
+
+Usage windows come back in an array whose order the provider does not promise, so they can be picked by field instead of by position: `limits[type == 'TOKENS_LIMIT'][unit == 3].percentage` takes the first element matching every selector.
+
+### Settings example
+
+```json
+"oaicopilot.models": [
+    {
+        "id": "__provider__deepseek",
+        "owned_by": "deepseek",
+        "providerConfig": true,
+        "baseUrl": "https://api.deepseek.com/v1",
+        "balance": {
+            "enabled": true,
+            "preset": "deepseek",
+            "intervalMinutes": 15
+        }
+    }
+]
+```
+
+### Behaviour and limits
+
+- **Manual by default.** `intervalMinutes` is `0` unless you set it, and the background refresh only runs for providers with a positive interval.
+- **Failures do not blank the display.** A timeout, network error, or 5xx keeps the last known value for ten minutes and marks it as stale. Authentication and 404 errors are shown immediately, because retrying them will not help.
+- **One request at a time per provider.** Concurrent refreshes are merged, and the response body is capped at 1 MB.
+- **The API key is read from secure storage** and never leaves the extension host, so the configuration page cannot see it.
+- **The status bar follows the provider you are chatting with**, so it shows the balance that is actually being spent.
+- Only `http` and `https` endpoints are accepted.
 
 </details>
 

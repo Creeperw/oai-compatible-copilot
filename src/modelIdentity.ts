@@ -1,4 +1,4 @@
-import type { HFModelItem } from "./types";
+import type { HFModelItem, ProviderBalanceConfig } from "./types";
 
 const RUNTIME_MODEL_ID_PREFIX = "oaicopilot-v1-";
 
@@ -127,6 +127,85 @@ function adoptLegacyProviderRecords(models: HFModelItem[]): HFModelItem[] {
 	return adopted;
 }
 
+/**
+ * Trim a balance configuration and drop empty fields so an untouched form does
+ * not persist a wall of empty strings. Returns undefined when nothing is left.
+ */
+export function normalizeProviderBalance(balance: unknown): ProviderBalanceConfig | undefined {
+	if (!balance || typeof balance !== "object" || Array.isArray(balance)) {
+		return undefined;
+	}
+	const source = balance as Record<string, unknown>;
+	const pick = (value: unknown): string | undefined => {
+		if (typeof value !== "string") {
+			return undefined;
+		}
+		const trimmed = value.trim();
+		return trimmed ? trimmed : undefined;
+	};
+
+	const extractSource =
+		source.extract && typeof source.extract === "object" && !Array.isArray(source.extract)
+			? (source.extract as Record<string, unknown>)
+			: {};
+	const remaining = pick(extractSource.remaining);
+	const unit = pick(extractSource.unit);
+	const planName = pick(extractSource.planName);
+	const total = pick(extractSource.total);
+	const used = pick(extractSource.used);
+	const extra = pick(extractSource.extra);
+	const hasExtractor = Boolean(remaining || unit || planName || total || used || extra);
+
+	const headersSource =
+		source.headers && typeof source.headers === "object" && !Array.isArray(source.headers)
+			? (source.headers as Record<string, unknown>)
+			: {};
+	const headers: Record<string, string> = {};
+	for (const [key, value] of Object.entries(headersSource)) {
+		const name = key.trim();
+		const headerValue = pick(value);
+		if (name && headerValue) {
+			headers[name] = headerValue;
+		}
+	}
+
+	const auth =
+		source.auth === "bearer" || source.auth === "x-api-key" || source.auth === "none" ? source.auth : undefined;
+	const timeoutMs =
+		typeof source.timeoutMs === "number" && Number.isFinite(source.timeoutMs) && source.timeoutMs > 0
+			? Math.floor(source.timeoutMs)
+			: undefined;
+	const intervalMinutes =
+		typeof source.intervalMinutes === "number" && Number.isFinite(source.intervalMinutes) && source.intervalMinutes > 0
+			? Math.floor(source.intervalMinutes)
+			: undefined;
+
+	const normalized: ProviderBalanceConfig = {
+		...(source.enabled === true ? { enabled: true } : {}),
+		...(pick(source.preset) ? { preset: pick(source.preset)! } : {}),
+		...(pick(source.url) ? { url: pick(source.url)! } : {}),
+		...(pick(source.method) ? { method: pick(source.method)!.toUpperCase() } : {}),
+		...(auth ? { auth } : {}),
+		...(Object.keys(headers).length ? { headers } : {}),
+		...(hasExtractor
+			? {
+					extract: {
+						remaining: remaining ?? "",
+						...(unit ? { unit } : {}),
+						...(planName ? { planName } : {}),
+						...(total ? { total } : {}),
+						...(used ? { used } : {}),
+						...(extra ? { extra } : {}),
+					},
+				}
+			: {}),
+		...(timeoutMs ? { timeoutMs } : {}),
+		...(intervalMinutes ? { intervalMinutes } : {}),
+	};
+
+	return Object.keys(normalized).length ? normalized : undefined;
+}
+
 export function normalizeConfiguredModel(model: HFModelItem): HFModelItem {
 	const rawProvider = getModelProviderId(model);
 	const provider = canonicalizeProvider(rawProvider);
@@ -136,6 +215,8 @@ export function normalizeConfiguredModel(model: HFModelItem): HFModelItem {
 	const baseUrl = typeof model.baseUrl === "string" ? model.baseUrl.trim() || undefined : undefined;
 
 	const placeholder = model.providerConfig === true;
+	// A balance query belongs to the provider, so a model record never keeps one.
+	const balance = placeholder ? normalizeProviderBalance(model.balance) : undefined;
 	return {
 		...model,
 		id,
@@ -144,6 +225,7 @@ export function normalizeConfiguredModel(model: HFModelItem): HFModelItem {
 		...(displayName ? { displayName } : { displayName: undefined }),
 		...(configId ? { configId } : { configId: undefined }),
 		...(baseUrl ? { baseUrl } : { baseUrl: undefined }),
+		balance,
 	};
 }
 
@@ -153,7 +235,7 @@ export function defaultDisplayName(model: Pick<HFModelItem, "id" | "owned_by">):
 
 export function createProviderConfiguration(
 	provider: string,
-	configuration: Pick<HFModelItem, "baseUrl" | "apiMode" | "headers" | "session_id_header"> = {}
+	configuration: Pick<HFModelItem, "baseUrl" | "apiMode" | "headers" | "session_id_header" | "balance"> = {}
 ): HFModelItem {
 	const canonicalProvider = canonicalizeProvider(provider);
 	if (!canonicalProvider) {

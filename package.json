@@ -36,7 +36,7 @@
 		"type": "git",
 		"url": "https://github.com/Creeperw/oai-compatible-copilot"
 	},
-	"version": "0.4.4",
+	"version": "0.4.5",
 	"engines": {
 		"vscode": "^1.120.0"
 	},
@@ -70,22 +70,34 @@
 			{
 				"command": "oaicopilot.setProviderApikey",
 				"category": "PolyLLM",
-				"title": "Set Multi-Provider API Key"
+				"title": "%command.oaicopilot.setProviderApikey.title%"
 			},
 			{
 				"command": "oaicopilot.openConfig",
 				"category": "PolyLLM",
-				"title": "Open Configuration UI"
+				"title": "%command.oaicopilot.openConfig.title%"
+			},
+			{
+				"command": "oaicopilot.showBalances",
+				"category": "PolyLLM",
+				"title": "%command.oaicopilot.showBalances.title%",
+				"icon": "$(credit-card)"
+			},
+			{
+				"command": "oaicopilot.refreshBalances",
+				"category": "PolyLLM",
+				"title": "%command.oaicopilot.refreshBalances.title%",
+				"icon": "$(refresh)"
 			},
 			{
 				"command": "oaicopilot.generateGitCommitMessage",
-				"title": "Generate Commit Message",
+				"title": "%command.oaicopilot.generateGitCommitMessage.title%",
 				"category": "PolyLLM",
 				"icon": "$(wand)"
 			},
 			{
 				"command": "oaicopilot.abortGitCommitMessage",
-				"title": "Generate Commit Message - Stop",
+				"title": "%command.oaicopilot.abortGitCommitMessage.title%",
 				"category": "PolyLLM",
 				"icon": "$(debug-stop)"
 			}
@@ -117,6 +129,21 @@
 		"configuration": {
 			"title": "PolyLLM",
 			"properties": {
+				"oaicopilot.language": {
+					"type": "string",
+					"default": "auto",
+					"enum": [
+						"auto",
+						"en",
+						"zh-CN"
+					],
+					"enumDescriptions": [
+						"%config.oaicopilot.language.auto%",
+						"%config.oaicopilot.language.en%",
+						"%config.oaicopilot.language.zhCN%"
+					],
+					"description": "%config.oaicopilot.language.description%"
+				},
 				"oaicopilot.logLevel": {
 					"type": "string",
 					"default": "off",
@@ -127,7 +154,7 @@
 						"warn",
 						"error"
 					],
-					"description": "Debug log level. Logs are written to ~/.copilot/oaicopilot/logs/ as JSON lines. Default is 'off' (no logging)."
+					"description": "%config.oaicopilot.logLevel.description%"
 				},
 				"oaicopilot.models": {
 					"type": "array",
@@ -391,6 +418,95 @@
 								"type": "string",
 								"description": "Name of an HTTP header used to send a stable per-conversation session ID, derived from the first user turn. Required by providers that route requests by session, for example OpenCode Zen/Go which expects 'x-opencode-session'. Leave empty to disable."
 							},
+							"balance": {
+								"type": "object",
+								"description": "Optional balance query for this provider. Enable it in the Configuration UI, in the Balance column of the Providers table.",
+								"properties": {
+									"enabled": {
+										"type": "boolean",
+										"description": "Turn the balance query on. Nothing is requested while this is false."
+									},
+									"preset": {
+										"type": "string",
+										"enum": [
+											"deepseek",
+											"siliconflow",
+											"siliconflow-en",
+											"openrouter",
+											"stepfun",
+											"novita",
+											"newapi",
+											"kimi",
+											"zhipu",
+											"minimax",
+											"opencode-go"
+										],
+										"description": "Built-in preset supplying the endpoint, authentication, and response fields. Explicit values below override it."
+									},
+									"url": {
+										"type": "string",
+										"description": "Endpoint that reports the balance. Absolute, or a path appended to the provider Base URL. Supports {{baseUrl}}, {{origin}}, and {{apiKey}}."
+									},
+									"method": {
+										"type": "string",
+										"enum": ["GET", "POST"],
+										"default": "GET",
+										"description": "HTTP method used for the balance request. Default is GET."
+									},
+									"auth": {
+										"type": "string",
+										"enum": ["bearer", "x-api-key", "none"],
+										"default": "bearer",
+										"description": "How the provider API key is sent. Default is bearer."
+									},
+									"headers": {
+										"type": "object",
+										"description": "Extra headers added to every balance request. Values support the same placeholders as the URL."
+									},
+									"extract": {
+										"type": "object",
+										"description": "JSON paths read from the response, with optional arithmetic such as 'data.quota / 500000'. No code is executed.",
+										"properties": {
+											"remaining": {
+												"type": "string",
+												"description": "Required. The value shown as the balance, for example 'balance_infos[0].total_balance'."
+											},
+											"unit": {
+												"type": "string",
+												"description": "Currency or unit label, for example 'balance_infos[0].currency' or '\"CNY\"'."
+											},
+											"planName": {
+												"type": "string",
+												"description": "Subscription or plan label, for example 'data.group'."
+											},
+											"total": {
+												"type": "string",
+												"description": "Starting or granted amount. Used to grade low-balance warnings."
+											},
+											"used": {
+												"type": "string",
+												"description": "Amount already spent."
+											},
+											"extra": {
+												"type": "string",
+												"description": "Any short note shown in the balance tooltip."
+											}
+										}
+									},
+									"timeoutMs": {
+										"type": "number",
+										"minimum": 1,
+										"default": 10000,
+										"description": "Request timeout in milliseconds. Default is 10000."
+									},
+									"intervalMinutes": {
+										"type": "number",
+										"minimum": 0,
+										"default": 0,
+										"description": "Background refresh interval in minutes. 0 disables automatic refresh, leaving the balance to be queried manually."
+									}
+								}
+							},
 							"include_reasoning_in_request": {
 								"type": "boolean",
 								"default": false,
@@ -429,7 +545,7 @@
 							"id"
 						]
 					},
-					"description": "Configured models. Model ID is unique within a provider; Display Name is globally unique."
+					"description": "%config.oaicopilot.models.description%"
 				},
 				"oaicopilot.retry": {
 					"type": "object",
@@ -443,35 +559,35 @@
 						"enabled": {
 							"type": "boolean",
 							"default": true,
-							"description": "Enable retry mechanism for api errors. Default is true."
+							"description": "%config.oaicopilot.retry.enabled.description%"
 						},
 						"max_attempts": {
 							"type": "number",
 							"default": 3,
 							"minimum": 1,
-							"description": "Maximum number of retry attempts. Default is 3."
+							"description": "%config.oaicopilot.retry.max_attempts.description%"
 						},
 						"interval_ms": {
 							"type": "number",
 							"default": 1000,
 							"minimum": 1,
-							"description": "Interval between retry attempts in milliseconds. Default is 1000 (1 seconds)."
+							"description": "%config.oaicopilot.retry.interval_ms.description%"
 						},
 						"status_codes": {
 							"type": "array",
 							"items": {
 								"type": "number"
 							},
-							"description": "Additional HTTP status codes that will be merged. Default is [429, 500, 502, 503, 504]."
+							"description": "%config.oaicopilot.retry.status_codes.description%"
 						}
 					},
-					"description": "Retry configuration for handling api errors like [429, 500, 502, 503, 504]."
+					"description": "%config.oaicopilot.retry.description%"
 				},
 				"oaicopilot.delay": {
 					"type": "number",
 					"default": 0,
 					"minimum": 0,
-					"description": "Fixed delay in milliseconds between consecutive requests. Default is 0 (no delay)."
+					"description": "%config.oaicopilot.delay.description%"
 				},
 				"oaicopilot.commitLanguage": {
 					"type": "string",
@@ -492,19 +608,19 @@
 						"Turkish",
 						"Polish"
 					],
-					"description": "Language for generated Git commit messages. Default is English."
+					"description": "%config.oaicopilot.commitLanguage.description%"
 				},
 				"oaicopilot.commitMessagePrompt": {
 					"type": "string",
 					"default": "",
-					"description": "Custom system prompt for commit message generation. If not provided, uses the default prompt."
+					"description": "%config.oaicopilot.commitMessagePrompt.description%"
 				},
 				"oaicopilot.readFileLines": {
 					"type": "number",
 					"default": 0,
 					"minimum": 0,
 					"maximum": 10000,
-					"description": "Number of lines to read when using `read_file` tool. Large lines may cost more tokens. Default is 0, let model decide lines."
+					"description": "%config.oaicopilot.readFileLines.description%"
 				}
 			}
 		}

@@ -1,0 +1,23 @@
+{
+	"command.oaicopilot.setProviderApikey.title": "Set Multi-Provider API Key",
+	"command.oaicopilot.openConfig.title": "Open Configuration UI",
+	"command.oaicopilot.showBalances.title": "Show Provider Balances",
+	"command.oaicopilot.refreshBalances.title": "Refresh Provider Balances",
+	"command.oaicopilot.generateGitCommitMessage.title": "Generate Commit Message",
+	"command.oaicopilot.abortGitCommitMessage.title": "Generate Commit Message - Stop",
+	"config.oaicopilot.logLevel.description": "Debug log level. Logs are written to ~/.copilot/oaicopilot/logs/ as JSON lines. Default is 'off' (no logging).",
+	"config.oaicopilot.models.description": "Configured models. Model ID is unique within a provider; Display Name is globally unique.",
+	"config.oaicopilot.retry.description": "Retry configuration for handling api errors like [429, 500, 502, 503, 504].",
+	"config.oaicopilot.delay.description": "Fixed delay in milliseconds between consecutive requests. Default is 0 (no delay).",
+	"config.oaicopilot.commitLanguage.description": "Language for generated Git commit messages. Default is English.",
+	"config.oaicopilot.commitMessagePrompt.description": "Custom system prompt for commit message generation. If not provided, uses the default prompt.",
+	"config.oaicopilot.readFileLines.description": "Number of lines to read when using `read_file` tool. Large lines may cost more tokens. Default is 0, let model decide lines.",
+	"config.oaicopilot.retry.enabled.description": "Enable retry mechanism for api errors. Default is true.",
+	"config.oaicopilot.retry.max_attempts.description": "Maximum number of retry attempts. Default is 3.",
+	"config.oaicopilot.retry.interval_ms.description": "Interval between retry attempts in milliseconds. Default is 1000 (1 seconds).",
+	"config.oaicopilot.retry.status_codes.description": "Additional HTTP status codes that will be merged. Default is [429, 500, 502, 503, 504].",
+	"config.oaicopilot.language.description": "Language of the PolyLLM configuration panel. Automatic follows the VS Code display language.",
+	"config.oaicopilot.language.auto": "Follow the VS Code display language",
+	"config.oaicopilot.language.en": "English",
+	"config.oaicopilot.language.zhCN": "简体中文"
+}

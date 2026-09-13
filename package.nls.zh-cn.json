@@ -1,0 +1,23 @@
+{
+	"command.oaicopilot.setProviderApikey.title": "设置多供应商 API 密钥",
+	"command.oaicopilot.openConfig.title": "打开配置界面",
+	"command.oaicopilot.showBalances.title": "查看供应商余额",
+	"command.oaicopilot.refreshBalances.title": "刷新供应商余额",
+	"command.oaicopilot.generateGitCommitMessage.title": "生成提交信息",
+	"command.oaicopilot.abortGitCommitMessage.title": "生成提交信息 - 停止",
+	"config.oaicopilot.logLevel.description": "调试日志级别。日志以 JSON Lines 格式写入 ~/.copilot/oaicopilot/logs/。默认为 'off'，即不记录日志。",
+	"config.oaicopilot.models.description": "已配置的模型。模型 ID 在同一供应商内唯一；显示名称全局唯一。",
+	"config.oaicopilot.retry.description": "接口报错（例如 [429, 500, 502, 503, 504]）时的重试配置。",
+	"config.oaicopilot.delay.description": "连续请求之间的固定等待时间，单位毫秒。默认为 0，即不等待。",
+	"config.oaicopilot.commitLanguage.description": "生成的 Git 提交信息使用的语言。默认为英语。",
+	"config.oaicopilot.commitMessagePrompt.description": "生成提交信息时使用的自定义系统提示词。未提供时使用默认提示词。",
+	"config.oaicopilot.readFileLines.description": "`read_file` 工具每次读取的行数。行数越多消耗的 token 越多。默认 0，由模型自行决定。",
+	"config.oaicopilot.retry.enabled.description": "接口报错时自动重试。默认为 true。",
+	"config.oaicopilot.retry.max_attempts.description": "最多重试几次。默认为 3。",
+	"config.oaicopilot.retry.interval_ms.description": "两次重试之间的等待时间，单位毫秒。默认为 1000（1 秒）。",
+	"config.oaicopilot.retry.status_codes.description": "额外需要重试的 HTTP 状态码，会与默认列表合并。默认为 [429, 500, 502, 503, 504]。",
+	"config.oaicopilot.language.description": "PolyLLM 配置界面的显示语言。自动表示跟随 VS Code 的显示语言。",
+	"config.oaicopilot.language.auto": "跟随 VS Code 的显示语言",
+	"config.oaicopilot.language.en": "English",
+	"config.oaicopilot.language.zhCN": "简体中文"
+}

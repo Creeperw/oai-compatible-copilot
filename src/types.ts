@@ -1,4 +1,63 @@
 /**
+ * Declarative extractor for a provider balance response.
+ *
+ * Every field is a small expression: a JSON field path such as
+ * `balance_infos[0].total_balance`, optionally combined with `+ - * /` and
+ * parentheses so providers that report credits and usage separately (or in a
+ * different unit) can still be expressed. A double-quoted value is a string
+ * literal.
+ */
+export interface BalanceExtractor {
+	/** Remaining balance. Evaluated to a number. */
+	remaining: string;
+	/** Unit shown next to the amount, for example `USD`, `CNY`, `次`, or a field path. */
+	unit?: string;
+	/** Plan name. Required only when a provider reports several plans. */
+	planName?: string;
+	/** Total quota. When set together with `remaining`, the UI can show a progress bar. */
+	total?: string;
+	/** Already used quota. */
+	used?: string;
+	/** Extra text shown in the tooltip. */
+	extra?: string;
+}
+
+/**
+ * How to query a provider's remaining balance.
+ *
+ * Stored on the provider record, so it travels with export/import and does not
+ * require a second place to configure credentials.
+ */
+export interface ProviderBalanceConfig {
+	/** Whether the query runs at all. Defaults to false. */
+	enabled?: boolean;
+	/** Name of a built-in preset, or `"custom"`. Selects the defaults for the fields below. */
+	preset?: string;
+	/** Request URL. Supports `{{baseUrl}}` and `{{apiKey}}`. A relative path is resolved against the provider Base URL. */
+	url?: string;
+	/** HTTP method. Defaults to `GET`. */
+	method?: string;
+	/**
+	 * How the API key is attached.
+	 * - `bearer`: `Authorization: Bearer <key>` (default)
+	 * - `x-api-key`: `x-api-key: <key>`
+	 * - `none`: no credential header
+	 */
+	auth?: "bearer" | "x-api-key" | "none";
+	/** Extra request headers. Values support `{{apiKey}}` and `{{baseUrl}}`. */
+	headers?: Record<string, string>;
+	/** Field paths used to read the amount out of the response. */
+	extract?: BalanceExtractor;
+	/** Request timeout in milliseconds. Defaults to 10000. */
+	timeoutMs?: number;
+	/**
+	 * Background refresh interval in minutes. `0` disables background refresh so
+	 * the query only runs when the user asks for it. Defaults to 0.
+	 */
+	intervalMinutes?: number;
+}
+
+/**
  * A single underlying provider (e.g., together, groq) for a model.
  */
 export interface HFProvider {
@@ -82,6 +141,12 @@ export interface HFModelItem {
 	 * Example: "x-opencode-session"
 	 */
 	session_id_header?: string;
+
+	/**
+	 * Optional balance query for this provider. Only meaningful on provider
+	 * records (`providerConfig: true`).
+	 */
+	balance?: ProviderBalanceConfig;
 
 	/**
 	 * Whether to include reasoning_content in assistant messages sent to the API.

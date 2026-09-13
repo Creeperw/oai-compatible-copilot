@@ -25,6 +25,7 @@
 - **可视化配置界面**：直观的界面管理供应商和模型
 - **自动重试**：处理 API 错误（429、500、502、503、504），支持指数退避
 - **Token 用量**：状态栏实时显示 token 计数和供应商 API 密钥管理
+- **供应商余额**：查询并显示各供应商的剩余额度，内置 DeepSeek、SiliconFlow、OpenRouter、StepFun、Novita AI、New API 中转站，以及 Kimi、智谱 GLM、MiniMax、OpenCode Go 编程套餐预设
 - **Git 集成**：直接从源代码管理生成提交信息
 - **导入/导出**：轻松分享和备份配置
 - **工具优化**：优化 agent `read_file` 工具处理，避免对大文件读取小片段。
@@ -80,6 +81,10 @@
 
 2. **通过状态栏**：
    - 点击 VS Code 右下角的 "PolyLLM" 状态栏项
+
+### 界面语言
+
+配置界面提供英文和简体中文两种语言。默认跟随 VS Code 的显示语言；面板标题栏的语言下拉框可以立即切换，也可以在设置页通过 `oaicopilot.language`（`auto`、`en`、`zh-CN`）设置。切换语言不会丢失你在表格里已经输入但尚未保存的内容。命令面板条目和设置页会跟随同一选择。
 
 <details>
 <summary>点击展开详情</summary>
@@ -363,6 +368,96 @@ VS Code 不会向语言模型供应商暴露会话标识，因此本扩展会从
 - 你也可以在配置界面中设置，位于供应商表格的 **Session ID Header** 列。
 - 该值是首个用户轮次的 SHA-256 哈希（UUID 形状），因此请求头中不会携带任何对话内容。
 - 由于 VS Code 不提供会话 ID，两条首个用户消息完全相同的对话会共用同一个会话 ID。
+
+</details>
+
+## ✨ 供应商余额
+
+PolyLLM 可以查询供应商还剩多少额度，并显示在状态栏中，这样在请求失败之前就能发现账号快用完了。
+
+余额查询是可选的，按供应商逐个配置。在你为某个供应商开启之前，不会发出任何请求；默认刷新方式是手动的。
+
+<details>
+<summary>点击查看详情</summary>
+
+### 如何开启
+
+1. 运行 **PolyLLM: Open Configuration UI**。
+2. 在供应商表格的 **Balance** 列点击 ⚙ 按钮。
+3. 勾选 **Enable balance query**，选择一个预设，或者自己填写一个自定义接口。选择预设会自动帮你勾上开关。
+4. 点击 **Test** 先试跑一次看结果，然后点 **Save** 保存。
+
+开启后，使用该供应商时状态栏会显示余额；**PolyLLM: Show Provider Balances** 命令会列出所有已配置的供应商。
+
+**Balance** 列区分三种状态：`Not set`（尚未配置）、`Disabled`（已保存查询但开关未打开）、以及查询成功后的余额本身。已查到的结果会保留在面板里，重新打开配置界面不会丢失。
+
+### 内置预设
+
+| 预设 | 接口 | 说明 |
+| --- | --- | --- |
+| DeepSeek | `GET {{baseUrl}}/user/balance` | 按币种分别报告余额 |
+| SiliconFlow（国内站） | `GET {{baseUrl}}/user/info` | 总余额，单位为人民币 |
+| SiliconFlow（国际站） | `GET {{baseUrl}}/user/info` | 同一接口，国际站返回美元 |
+| OpenRouter | `GET {{baseUrl}}/credits` | 用总额度减去已用量得到剩余 |
+| StepFun 阶跃 | `GET {{origin}}/v1/accounts` | 余额单位为人民币 |
+| Novita AI | `GET {{origin}}/v3/user/balance` | 接口以 0.0001 美元为单位，预设已换算 |
+| New API | `GET {{origin}}/api/user/self` | 适用于基于 New API 搭建的中转站；额度用 `/ 500000` 换算 |
+| Kimi For Coding | `GET {{baseUrl}}/v1/usages` | 读取总窗口的剩余百分比 |
+| 智谱 GLM | `GET {{origin}}/api/monitor/usage/quota/limit` | 读取 5 小时窗口的剩余百分比。密钥直接放在 `Authorization` 里，不带 `Bearer` 前缀 |
+| MiniMax | `GET {{origin}}/v1/api/openplatform/coding_plan/remains` | 读取 5 小时窗口的剩余百分比 |
+| OpenCode Go | `GET https://opencode.ai/zen/go/v1/usage` | 读取 5 小时滚动窗口的剩余百分比 |
+
+其他供应商可以手动配置：接口地址、请求方法、鉴权方式、额外请求头，以及响应字段。
+
+#### 编程套餐返回的是百分比，不是钱
+
+订阅制套餐没有「余额」可查 —— Kimi、智谱 GLM、MiniMax、OpenCode Go 返回的是滚动窗口还剩多少。这些预设把窗口表达成以 100 为总量的百分比，这样套餐和余额可以显示在同一列，并共用同一套余额偏低配色。每个预设读取的是最短的那个窗口，因为它才是当下真正卡住你的限制；如果你想盯周窗口或月窗口，把 Remaining 表达式改指过去即可。
+
+OpenCode Zen（按量付费）完全没有公开的余额或用量接口，因此无法查询。OpenCode Go 是另一条独立线路，有自己的订阅。
+
+### 如何描述响应
+
+响应字段是 JSON 路径，可以带简单的四则运算。这里不会执行任何代码，因此配置本身无法在你机器上运行任何东西。
+
+| 字段 | 含义 | 示例 |
+| --- | --- | --- |
+| Remaining | 必填。作为余额展示的数值。 | `balance_infos[0].total_balance` |
+| Unit | 币种或单位标签 | `balance_infos[0].currency` 或 `"CNY"` |
+| Total | 初始/赠送额度，用于判定余额偏低的提醒 | `(data.quota + data.used_quota) / 500000` |
+| Used | 已用额度 | `data.used_quota / 500000` |
+| Plan name | 套餐或订阅名称 | `data.group` |
+| Extra | 在提示框中额外显示的一句话 | `data.expires_at` |
+
+支持的写法：`a.b`、`a[0].b`、`["odd key"]`、`+ - * /`、括号，以及 `"USD"` 这样的带引号字面量。不带引号的单词会被当作字面量，所以直接写 `CNY` 也可以。
+
+用量窗口返回在数组里，而供应商并不保证数组顺序，所以可以按字段而不是按位置取值：`limits[type == 'TOKENS_LIMIT'][unit == 3].percentage` 会取第一个同时满足所有条件的元素。
+
+### 配置示例
+
+```json
+"oaicopilot.models": [
+    {
+        "id": "__provider__deepseek",
+        "owned_by": "deepseek",
+        "providerConfig": true,
+        "baseUrl": "https://api.deepseek.com/v1",
+        "balance": {
+            "enabled": true,
+            "preset": "deepseek",
+            "intervalMinutes": 15
+        }
+    }
+]
+```
+
+### 行为与限制
+
+- **默认手动。** 除非你主动设置，`intervalMinutes` 为 `0`；只有设置了正数的供应商才会后台自动刷新。
+- **查询失败不会把显示清空。** 超时、网络错误或 5xx 会保留最近一次成功的数值十分钟，并标记为过期；鉴权和 404 类错误会立即显示，因为重试没有意义。
+- **同一供应商同时只发一个请求。** 并发刷新会被合并，响应体上限为 1 MB。
+- **API 密钥从安全存储读取**，不会离开扩展进程，因此配置页面看不到它。
+- **状态栏跟随你正在对话的供应商**，显示的是真正在被消耗的那个余额。
+- 只接受 `http` 和 `https` 地址。
 
 </details>
 

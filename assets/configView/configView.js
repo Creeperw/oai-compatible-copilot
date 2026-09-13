@@ -6,7 +6,94 @@ const state = {
 	models: [],
 	providerKeys: {},
 	providerInfo: {},
+	/** Latest balance outcome per provider, pushed by the extension host. */
+	balances: {},
+	/** Preset catalogue offered by the extension host. */
+	balancePresets: [],
+	/** Language currently displayed. */
+	locale: "en",
+	/** Languages the panel offers, sent by the host. */
+	locales: [],
+	/** Whether the stored preference is `auto`, i.e. following VS Code. */
+	languageIsAuto: true,
 };
+
+/* ------------------------------------------------------------------ *
+ * Localisation
+ *
+ * The host owns the catalogue: it sends the messages for the active
+ * language on every init, so this file never hardcodes a user-visible
+ * string and the two languages cannot drift apart here.
+ * ------------------------------------------------------------------ */
+
+/** Messages for the active language, replaced on every init. */
+let messages = {};
+
+/**
+ * Translate a key.
+ *
+ * A missing key returns the key itself, so a gap shows up in the UI instead of
+ * silently rendering as empty.
+ */
+function t(key, ...args) {
+	const template = messages[key];
+	if (typeof template !== "string") {
+		return key;
+	}
+	return template.replace(/\{(\d+)\}/g, (match, index) => {
+		const value = args[Number(index)];
+		return value === undefined ? match : String(value);
+	});
+}
+
+/**
+ * Apply the catalogue to the static markup.
+ *
+ * Elements are tagged in the HTML with `data-i18n`, so a new string cannot be
+ * forgotten in one language: the test suite fails if a tag has no message.
+ */
+function applyTranslations(root = document) {
+	for (const element of root.querySelectorAll("[data-i18n]")) {
+		element.textContent = t(element.dataset.i18n);
+	}
+	// Descriptions that embed <code> examples cannot have their text replaced
+	// wholesale, so their markup lives in the catalogue instead.
+	for (const element of root.querySelectorAll("[data-i18n-html]")) {
+		element.innerHTML = t(element.dataset.i18nHtml);
+	}
+	for (const element of root.querySelectorAll("[data-i18n-placeholder]")) {
+		element.placeholder = t(element.dataset.i18nPlaceholder);
+	}
+	for (const element of root.querySelectorAll("[data-i18n-title]")) {
+		element.title = t(element.dataset.i18nTitle);
+	}
+	document.documentElement.lang = state.locale;
+}
+
+/** Read every editable value in the provider table. */
+function captureTableEdits() {
+	const captured = {};
+	for (const row of providerTableBody.querySelectorAll("tr[data-provider]")) {
+		captured[row.dataset.provider] = collectProviderRowValues(row);
+	}
+	return captured;
+}
+
+/** Put back the values captured before a re-render, so a language switch keeps unsaved edits. */
+function restoreTableEdits(captured) {
+	for (const row of providerTableBody.querySelectorAll("tr[data-provider]")) {
+		const values = captured[row.dataset.provider];
+		if (!values) {
+			continue;
+		}
+		row.querySelectorAll(".provider-input").forEach((input) => {
+			const value = values[input.getAttribute("data-field")];
+			if (value !== undefined) {
+				input.value = value;
+			}
+		});
+	}
+}
 
 // Store the action to be performed after confirmation
 const pendingConfirmations = new Map();
@@ -15,6 +102,7 @@ const pendingOperations = new Map();
 // Global Configuration elements
 const delayInput = document.getElementById("delay");
 const readFileLinesInput = document.getElementById("readFileLines");
+const languageSelect = document.getElementById("languageSelect");
 const retryEnabledInput = document.getElementById("retryEnabled");
 const maxAttemptsInput = document.getElementById("maxAttempts");
 const intervalMsInput = document.getElementById("intervalMs");
@@ -23,6 +111,28 @@ const statusCodesInput = document.getElementById("statusCodes");
 // Provider management elements
 const providerTableBody = document.getElementById("providerTableBody");
 const providerErrorElement = document.getElementById("providerError");
+
+// Balance dialog elements
+const balanceModal = document.getElementById("balanceModal");
+const balanceModalTitle = document.getElementById("balanceModalTitle");
+const balanceEnabledInput = document.getElementById("balanceEnabled");
+const balancePresetInput = document.getElementById("balancePreset");
+const balancePresetHint = document.getElementById("balancePresetHint");
+const balanceUrlInput = document.getElementById("balanceUrl");
+const balanceMethodInput = document.getElementById("balanceMethod");
+const balanceAuthInput = document.getElementById("balanceAuth");
+const balanceHeadersInput = document.getElementById("balanceHeaders");
+const balanceRemainingInput = document.getElementById("balanceRemaining");
+const balanceUnitInput = document.getElementById("balanceUnit");
+const balancePlanNameInput = document.getElementById("balancePlanName");
+const balanceTotalInput = document.getElementById("balanceTotal");
+const balanceUsedInput = document.getElementById("balanceUsed");
+const balanceExtraInput = document.getElementById("balanceExtra");
+const balanceTimeoutInput = document.getElementById("balanceTimeout");
+const balanceIntervalInput = document.getElementById("balanceInterval");
+const balanceTestResultElement = document.getElementById("balanceTestResult");
+/** Provider whose balance config the dialog is currently editing. */
+let balanceModalProvider = "";
 
 // Model management elements
 const modelTableBody = document.getElementById("modelTableBody");
@@ -83,7 +193,7 @@ function postOperation(message, onSuccess, onError) {
 		const pending = pendingOperations.get(requestId);
 		if (pending) {
 			pendingOperations.delete(requestId);
-			pending.onError?.("The operation timed out. Refresh the configuration and try again.");
+			pending.onError?.(t("error.operationTimedOut"));
 		}
 	}, 15000);
 	pendingOperations.set(requestId, { onSuccess, onError, timeout });
@@ -97,18 +207,18 @@ function showProviderError(message) {
 	}
 }
 
-function parseJsonObject(value, label) {
+function parseJsonObject(value, labelKey) {
 	if (!value || value.trim() === "") {
 		return { ok: true, value: undefined };
 	}
 	try {
 		const parsed = JSON.parse(value.trim());
 		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			return { ok: false, error: `${label} must be a JSON object.` };
+			return { ok: false, error: t("error.jsonNotObject", t(labelKey)) };
 		}
 		return { ok: true, value: parsed };
 	} catch (error) {
-		return { ok: false, error: `${label} is invalid JSON: ${error.message}` };
+		return { ok: false, error: t("error.jsonInvalid", t(labelKey), error.message) };
 	}
 }
 
@@ -168,9 +278,9 @@ document.getElementById("addProvider").addEventListener("click", () => {
 	// Add new provider row to the table
 	const newRow = document.createElement("tr");
 	for (const input of [
-		createProviderInput("input", "provider", "", { type: "text", placeholder: "Provider ID" }),
-		createProviderInput("input", "baseUrl", "", { type: "text", placeholder: "Base URL" }),
-		createProviderInput("input", "apiKey", "", { type: "password", placeholder: "API Key" }),
+		createProviderInput("input", "provider", "", { type: "text", placeholder: t("providers.placeholderId") }),
+		createProviderInput("input", "baseUrl", "", { type: "text", placeholder: t("providers.placeholderBaseUrl") }),
+		createProviderInput("input", "apiKey", "", { type: "password", placeholder: t("providers.placeholderApiKey") }),
 	]) {
 		const cell = document.createElement("td");
 		cell.appendChild(input);
@@ -198,14 +308,23 @@ document.getElementById("addProvider").addEventListener("click", () => {
 	sessionIdCell.appendChild(
 		createProviderInput("input", "sessionIdHeader", "", {
 			type: "text",
-			placeholder: "x-opencode-session",
+			placeholder: t("providers.placeholderSessionId"),
 		})
 	);
 	newRow.appendChild(sessionIdCell);
+	// Keeps the new row aligned with the eight-column header; the balance cell is
+	// filled in once the provider is saved and the row is re-rendered.
+	const balanceCell = document.createElement("td");
+	balanceCell.className = "balance-cell";
+	const balanceBadge = document.createElement("div");
+	balanceBadge.className = "balance-badge balance-none";
+	balanceBadge.textContent = t("balance.statusNotSet");
+	balanceCell.appendChild(balanceBadge);
+	newRow.appendChild(balanceCell);
 	const actions = document.createElement("td");
 	for (const [className, label] of [
-		["save-provider-btn secondary", "Save"],
-		["cancel-provider-btn secondary", "Cancel"],
+		["save-provider-btn secondary", t("common.save")],
+		["cancel-provider-btn secondary", t("common.cancel")],
 	]) {
 		const button = document.createElement("button");
 		button.className = className;
@@ -221,18 +340,13 @@ document.getElementById("addProvider").addEventListener("click", () => {
 
 	saveBtn.addEventListener("click", () => {
 		showProviderError("");
-		const inputs = newRow.querySelectorAll(".provider-input");
-		const providerData = {};
-		inputs.forEach((input) => {
-			const field = input.getAttribute("data-field");
-			providerData[field] = input.value;
-		});
+		const providerData = collectProviderRowValues(newRow);
 
 		if (!providerData.provider.trim()) {
-			showProviderError("Provider ID is required.");
+			showProviderError(t("error.providerIdRequired"));
 			return;
 		}
-		const parsedHeaders = parseJsonObject(providerData.headers, "Custom Headers");
+		const parsedHeaders = parseJsonObject(providerData.headers, "advanced.headersLabel");
 		if (!parsedHeaders.ok) {
 			showProviderError(parsedHeaders.error);
 			return;
@@ -262,7 +376,7 @@ document.getElementById("addProvider").addEventListener("click", () => {
 document.getElementById("addModel").addEventListener("click", () => {
 	// Show the model form
 	modelFormSection.style.display = "block";
-	modelFormTitle.textContent = "Add New Model";
+	modelFormTitle.textContent = t("modelForm.addTitle");
 	// Reset form
 	resetModelForm();
 });
@@ -284,7 +398,7 @@ modelProviderInput.addEventListener("change", () => {
 toggleAdvancedSettingsBtn.addEventListener("click", () => {
 	const isCurrentlyVisible = advancedSettingsContent.style.display !== "none";
 	advancedSettingsContent.style.display = isCurrentlyVisible ? "none" : "block";
-	toggleAdvancedSettingsBtn.textContent = isCurrentlyVisible ? "Show Advanced Settings" : "Hide Advanced Settings";
+	toggleAdvancedSettingsBtn.textContent = isCurrentlyVisible ? t("advanced.show") : t("advanced.hide");
 });
 
 // Save Model button event listener
@@ -352,6 +466,25 @@ window.addEventListener("message", (event) => {
 			state.models = models || [];
 			state.commitModel = commitModel || "";
 			state.providerKeys = providerKeys || {};
+			// The host owns the catalogue, so the language arrives with every init.
+			state.locale = message.payload.locale || "en";
+			state.locales = message.payload.locales || [];
+			state.languageIsAuto = message.payload.languageIsAuto !== false;
+			messages = message.payload.messages || {};
+			// Translate the static markup before anything dynamic is rendered, so
+			// newly created rows are built in the right language.
+			applyTranslations();
+			populateLanguageOptions();
+			state.balancePresets = message.payload.balancePresets || [];
+			populateBalancePresetOptions();
+			// Seed the cached results so a reopened panel shows what the status bar
+			// already shows, instead of forgetting the previous session's queries.
+			state.balances = {};
+			for (const entry of message.payload.balances || []) {
+				if (entry && entry.provider) {
+					state.balances[entry.provider] = entry;
+				}
+			}
 
 			delayInput.value = state.delay;
 			readFileLinesInput.value = message.payload.readFileLines || 0;
@@ -360,8 +493,12 @@ window.addEventListener("message", (event) => {
 			intervalMsInput.value = state.retry.interval_ms || 1000;
 			statusCodesInput.value = state.retry.status_codes ? state.retry.status_codes.join(",") : "";
 
-			// Render provider and model management
+			// Render provider and model management. The provider table holds editable
+			// fields, so whatever the user has typed is carried across the re-render
+			// that a language switch triggers.
+			const pendingEdits = captureTableEdits();
 			renderProviders();
+			restoreTableEdits(pendingEdits);
 			renderModels();
 
 			// Populate after providerInfo is available so inherited API modes are resolved.
@@ -375,13 +512,22 @@ window.addEventListener("message", (event) => {
 			break;
 		case "modelsFetchError":
 			// Handle error from fetchModels
-			dropdownHeader.textContent = "Error fetching models";
+			dropdownHeader.textContent = t("error.fetchModelsHeader");
 			dropdownContent.replaceChildren();
 			const fetchError = document.createElement("div");
 			fetchError.className = "dropdown-option error";
-			fetchError.textContent = "Failed to fetch models. Check the Developer Console for details.";
+			fetchError.textContent = t("error.fetchModelsFailed");
 			dropdownContent.appendChild(fetchError);
 			console.error("[oaicopilot] Failed to fetch models:", message.error);
+			break;
+		case "balanceResult":
+			if (message.test) {
+				// A dry run from the dialog: show it there without touching the saved value.
+				renderBalanceTestResult(message);
+			} else {
+				state.balances[message.provider] = message;
+				renderBalanceCell(message.provider);
+			}
 			break;
 		case "operationResult": {
 			const pending = pendingOperations.get(message.requestId);
@@ -391,7 +537,7 @@ window.addEventListener("message", (event) => {
 				if (message.success) {
 					pending.onSuccess?.();
 				} else {
-					pending.onError?.(message.error || "The operation failed.");
+					pending.onError?.(message.error || t("error.operationFailed"));
 				}
 			}
 			break;
@@ -420,9 +566,9 @@ function renderProviders() {
 	);
 
 	if (!providers.length) {
-		providerTableBody.replaceChildren(createNoDataRow(6, "No providers"));
+		providerTableBody.replaceChildren(createNoDataRow(8, t("providers.empty")));
 		// Clear the provider dropdown as well
-		modelProviderInput.replaceChildren(new Option("Select Provider", ""));
+		modelProviderInput.replaceChildren(new Option(t("common.selectProvider"), ""));
 		return;
 	}
 
@@ -440,21 +586,16 @@ function renderProviders() {
 		};
 		return new Option(provider, provider);
 	});
-	modelProviderInput.replaceChildren(new Option("Select Provider", ""), ...providerOptions);
+	modelProviderInput.replaceChildren(new Option(t("common.selectProvider"), ""), ...providerOptions);
 
 	// Add event listeners for provider rows
 	document.querySelectorAll(".update-provider-btn").forEach((btn) => {
 		btn.addEventListener("click", (event) => {
 			const provider = event.target.getAttribute("data-provider");
 			const row = event.target.closest("tr");
-			const inputs = row.querySelectorAll(".provider-input");
-			const providerData = {};
-			inputs.forEach((input) => {
-				const field = input.getAttribute("data-field");
-				providerData[field] = input.value;
-			});
+			const providerData = collectProviderRowValues(row);
 
-			const parsedHeaders = parseJsonObject(providerData.headers, "Custom Headers");
+			const parsedHeaders = parseJsonObject(providerData.headers, "advanced.headersLabel");
 			if (!parsedHeaders.ok) {
 				showProviderError(parsedHeaders.error);
 				return;
@@ -489,7 +630,7 @@ function renderProviders() {
 			vscode.postMessage({
 				type: "requestConfirm",
 				id: confirmId,
-				message: `Are you sure you want to delete provider ${provider} and all its models?`,
+				message: t("confirm.deleteProvider", provider),
 				action: "deleteProvider",
 			});
 		});
@@ -506,7 +647,7 @@ function renderProviders() {
 			vscode.postMessage({
 				type: "requestConfirm",
 				id: confirmId,
-				message: `Clear the stored API key for ${provider}?`,
+				message: t("confirm.clearApiKey", provider),
 				action: "clearProviderApiKey",
 			});
 		});
@@ -540,6 +681,37 @@ function createProviderInput(tagName, field, value, attributes = {}) {
 	return input;
 }
 
+/** Read every editable field of a provider row into a plain object. */
+function collectProviderRowValues(row) {
+	const providerData = {};
+	row.querySelectorAll(".provider-input").forEach((input) => {
+		providerData[input.getAttribute("data-field")] = input.value;
+	});
+	return providerData;
+}
+
+/** The saved provider record for a provider, or an empty object. */
+function providerConfigOf(provider) {
+	return state.models.find((model) => model.owned_by === provider && model.providerConfig === true) || {};
+}
+
+/**
+ * Mirror a just-saved balance configuration into the local model list.
+ *
+ * The host also re-sends `init`, but the row must not keep looking unchanged
+ * while that round trip is in flight.
+ */
+function applySavedBalanceConfig(provider, balance) {
+	const record = state.models.find((model) => model.owned_by === provider && model.providerConfig === true);
+	if (record) {
+		record.balance = balance;
+	}
+	// The host drops its snapshot on every configuration change, so the number
+	// still on screen is no longer backed by anything.
+	delete state.balances[provider];
+	renderBalanceCell(provider);
+}
+
 function createProviderRow(provider) {
 	const providerModels = state.models.filter((m) => m.owned_by === provider);
 	const providerConfig = providerModels.find((m) => m.providerConfig === true) || {};
@@ -549,20 +721,23 @@ function createProviderRow(provider) {
 
 	const baseUrlCell = document.createElement("td");
 	baseUrlCell.appendChild(
-		createProviderInput("input", "baseUrl", providerConfig.baseUrl, { type: "text", placeholder: "Base URL" })
+		createProviderInput("input", "baseUrl", providerConfig.baseUrl, {
+			type: "text",
+			placeholder: t("providers.placeholderBaseUrl"),
+		})
 	);
 	row.appendChild(baseUrlCell);
 
 	const apiKeyCell = document.createElement("td");
 	const apiKeyInput = createProviderInput("input", "apiKey", "", {
 		type: "password",
-		placeholder: state.providerKeys[provider] ? "API key saved — leave blank to keep" : "Enter API key",
+		placeholder: state.providerKeys[provider] ? t("providers.keySavedPlaceholder") : t("providers.placeholderApiKey"),
 	});
 	apiKeyCell.appendChild(apiKeyInput);
 	if (state.providerKeys[provider]) {
 		const saved = document.createElement("div");
 		saved.className = "field-description";
-		saved.textContent = "A key is stored securely.";
+		saved.textContent = t("providers.keyStored");
 		apiKeyCell.appendChild(saved);
 	}
 	row.appendChild(apiKeyCell);
@@ -599,23 +774,28 @@ function createProviderRow(provider) {
 	sessionIdCell.appendChild(
 		createProviderInput("input", "sessionIdHeader", providerConfig.session_id_header, {
 			type: "text",
-			placeholder: "x-opencode-session",
+			placeholder: t("providers.placeholderSessionId"),
 		})
 	);
 	row.appendChild(sessionIdCell);
 
+	const balanceCell = document.createElement("td");
+	balanceCell.className = "balance-cell";
+	row.appendChild(balanceCell);
+	renderBalanceCellInto(balanceCell, provider);
+
 	const actions = document.createElement("td");
 	actions.className = "action-buttons";
 	for (const [className, label] of [
-		["update-provider-btn", "Save"],
-		["clear-provider-key-btn secondary", "Clear Key"],
-		["delete-provider-btn danger", "Delete"],
+		["update-provider-btn", t("common.save")],
+		["clear-provider-key-btn secondary", t("providers.clearKey")],
+		["delete-provider-btn danger", t("common.delete")],
 	]) {
 		const button = document.createElement("button");
 		button.className = className;
 		button.dataset.provider = provider;
 		button.textContent = label;
-		if (label === "Clear Key" && !state.providerKeys[provider]) {
+		if (label === t("providers.clearKey") && !state.providerKeys[provider]) {
 			button.disabled = true;
 		}
 		actions.appendChild(button);
@@ -624,10 +804,344 @@ function createProviderRow(provider) {
 	return row;
 }
 
+/**
+ * Grade a balance the same way the extension host does, so the colour in the
+ * table matches the status bar.
+ */
+function balanceSeverity(result) {
+	if (!result || typeof result.remaining !== "number") {
+		return "unknown";
+	}
+	if (typeof result.total !== "number" || result.total <= 0) {
+		return "unknown";
+	}
+	const ratio = result.remaining / result.total;
+	if (ratio <= 0.1) {
+		return "critical";
+	}
+	if (ratio <= 0.3) {
+		return "warning";
+	}
+	return "ok";
+}
+
+/** Re-render a provider's balance cell after its outcome changed. */
+function renderBalanceCell(provider) {
+	const cell = providerTableBody.querySelector(`tr[data-provider="${CSS.escape(provider)}"] .balance-cell`);
+	if (cell) {
+		renderBalanceCellInto(cell, provider);
+	}
+}
+
+function renderBalanceCellInto(cell, provider) {
+	const configured = providerConfigOf(provider).balance;
+	const enabled = configured?.enabled === true;
+	const outcome = state.balances[provider];
+	cell.replaceChildren();
+
+	const badge = document.createElement("div");
+	badge.className = "balance-badge";
+	if (!enabled) {
+		// A saved-but-switched-off query is not the same as no query at all;
+		// showing "Not set" for both makes a successful save look like a failure.
+		badge.classList.add("balance-none");
+		badge.textContent = configured ? t("balance.statusDisabled") : t("balance.statusNotSet");
+		badge.title = configured ? t("balance.configuredButOff") : t("balance.nothingConfigured");
+	} else if (outcome?.result) {
+		badge.classList.add(`balance-${balanceSeverity(outcome.result)}`);
+		badge.textContent = outcome.stale ? t("balance.staleSuffix", outcome.result.label) : outcome.result.label;
+		badge.title = outcome.result.requestUrl;
+	} else if (outcome?.error) {
+		badge.classList.add("balance-failed");
+		badge.textContent = t("balance.statusFailed");
+		badge.title = outcome.error;
+	} else {
+		badge.classList.add("balance-unknown");
+		badge.textContent = t("balance.statusNotQueried");
+	}
+	cell.appendChild(badge);
+
+	const buttons = document.createElement("div");
+	buttons.className = "balance-buttons";
+
+	const refresh = document.createElement("button");
+	refresh.className = "icon-button";
+	refresh.textContent = "↻";
+	refresh.title = enabled ? t("balance.refreshNow") : t("balance.enableFirst");
+	refresh.disabled = !enabled;
+	refresh.addEventListener("click", () => {
+		badge.className = "balance-badge balance-unknown";
+		badge.textContent = t("balance.statusQuerying");
+		vscode.postMessage({ type: "refreshBalance", provider });
+	});
+
+	const configure = document.createElement("button");
+	configure.className = "icon-button";
+	configure.textContent = "⚙";
+	configure.title = t("balance.configureTitle");
+	configure.addEventListener("click", () => openBalanceModal(provider));
+
+	buttons.append(refresh, configure);
+	cell.appendChild(buttons);
+}
+
+/** Offer the available languages, with the active one selected. */
+function populateLanguageOptions() {
+	languageSelect.replaceChildren();
+	// "Automatic" is not a language, so it comes from the message catalogue
+	// rather than from the list the host sends.
+	languageSelect.appendChild(new Option(t("global.languageAuto"), "auto"));
+	for (const entry of state.locales) {
+		languageSelect.appendChild(new Option(entry.label, entry.id));
+	}
+	languageSelect.value = state.languageIsAuto ? "auto" : state.locale;
+}
+
+languageSelect.addEventListener("change", () => {
+	vscode.postMessage({ type: "setLanguage", preference: languageSelect.value });
+});
+
+function populateBalancePresetOptions() {
+	const current = balancePresetInput.value;
+	balancePresetInput.replaceChildren(new Option(t("common.custom"), ""));
+	for (const preset of state.balancePresets) {
+		balancePresetInput.appendChild(new Option(preset.label, preset.id));
+	}
+	balancePresetInput.value = current;
+}
+
+function updateBalancePresetHint() {
+	const preset = state.balancePresets.find((entry) => entry.id === balancePresetInput.value);
+	balancePresetHint.textContent = preset
+		? `${preset.description} ${preset.baseUrlHint}`
+		: t("balance.presetDescription");
+}
+
+function openBalanceModal(provider) {
+	balanceModalProvider = provider;
+	const config = providerConfigOf(provider).balance || {};
+	balanceModalTitle.textContent = t("balance.modalTitleFor", provider);
+	balanceEnabledInput.checked = config.enabled === true;
+	balancePresetInput.value = config.preset || "";
+	balanceUrlInput.value = config.url || "";
+	balanceMethodInput.value = (config.method || "GET").toUpperCase();
+	balanceAuthInput.value = config.auth || "bearer";
+	balanceHeadersInput.value = config.headers ? JSON.stringify(config.headers, null, 2) : "";
+	const extract = config.extract || {};
+	balanceRemainingInput.value = extract.remaining || "";
+	balanceUnitInput.value = extract.unit || "";
+	balancePlanNameInput.value = extract.planName || "";
+	balanceTotalInput.value = extract.total || "";
+	balanceUsedInput.value = extract.used || "";
+	balanceExtraInput.value = extract.extra || "";
+	balanceTimeoutInput.value = config.timeoutMs || "";
+	balanceIntervalInput.value = config.intervalMinutes || "";
+	hideBalanceTestResult();
+	updateBalancePresetHint();
+	balanceModal.style.display = "flex";
+}
+
+function closeBalanceModal() {
+	balanceModal.style.display = "none";
+	balanceModalProvider = "";
+}
+
+/** Fill only the fields the user has left empty, so a preset never overwrites typed values. */
+function applyBalancePresetDefaults() {
+	const preset = state.balancePresets.find((entry) => entry.id === balancePresetInput.value);
+	if (!preset) {
+		return;
+	}
+	const fill = (input, value) => {
+		if (!input.value.trim() && value) {
+			input.value = value;
+		}
+	};
+	fill(balanceUrlInput, preset.config.url);
+	fill(balanceMethodInput, preset.config.method);
+	fill(balanceAuthInput, preset.config.auth);
+	fill(balanceRemainingInput, preset.config.extract.remaining);
+	fill(balanceUnitInput, preset.config.extract.unit);
+	fill(balancePlanNameInput, preset.config.extract.planName);
+	fill(balanceTotalInput, preset.config.extract.total);
+	fill(balanceUsedInput, preset.config.extract.used);
+	fill(balanceExtraInput, preset.config.extract.extra);
+	if (!balanceHeadersInput.value.trim() && preset.config.headers) {
+		balanceHeadersInput.value = JSON.stringify(preset.config.headers, null, 2);
+	}
+	// Picking a preset is a statement of intent, so switch the query on rather
+	// than letting Save silently store an inactive configuration.
+	balanceEnabledInput.checked = true;
+}
+
+/** Read the dialog into a `ProviderBalanceConfig`, or report the first problem. */
+function collectBalanceConfig() {
+	const remaining = balanceRemainingInput.value.trim();
+	if (balanceEnabledInput.checked && !remaining) {
+		return { ok: false, error: t("error.remainingRequired") };
+	}
+	const parsedHeaders = parseJsonObject(balanceHeadersInput.value, "balance.headersLabel");
+	if (!parsedHeaders.ok) {
+		return { ok: false, error: parsedHeaders.error };
+	}
+	const text = (input) => input.value.trim() || undefined;
+	const number = (input) => {
+		const raw = input.value.trim();
+		if (!raw) {
+			return undefined;
+		}
+		const value = Number(raw);
+		return Number.isFinite(value) && value > 0 ? value : undefined;
+	};
+	const extract = {
+		remaining,
+		unit: text(balanceUnitInput),
+		planName: text(balancePlanNameInput),
+		total: text(balanceTotalInput),
+		used: text(balanceUsedInput),
+		extra: text(balanceExtraInput),
+	};
+	const config = {
+		enabled: balanceEnabledInput.checked,
+		preset: balancePresetInput.value || undefined,
+		url: text(balanceUrlInput),
+		method: balanceMethodInput.value,
+		auth: balanceAuthInput.value,
+		headers: parsedHeaders.value,
+		extract,
+		timeoutMs: number(balanceTimeoutInput),
+		intervalMinutes: number(balanceIntervalInput),
+	};
+	return { ok: true, value: config };
+}
+
+function hideBalanceTestResult() {
+	balanceTestResultElement.style.display = "none";
+	balanceTestResultElement.replaceChildren();
+}
+
+function renderBalanceTestResult(message) {
+	balanceTestResultElement.replaceChildren();
+	balanceTestResultElement.className = `balance-test-result ${message.error ? "failed" : "succeeded"}`;
+	if (message.error) {
+		const title = document.createElement("div");
+		title.className = "balance-test-title";
+		title.textContent = t("balance.statusQueryFailed");
+		const detail = document.createElement("div");
+		detail.textContent = message.error;
+		balanceTestResultElement.append(title, detail);
+	} else if (message.result) {
+		const title = document.createElement("div");
+		title.className = "balance-test-title";
+		title.textContent = t("balance.resultLabel", message.result.label);
+		const detail = document.createElement("div");
+		detail.className = "balance-test-detail";
+		const parts = [];
+		if (message.result.planName) {
+			parts.push(t("balance.detailPlan", message.result.planName));
+		}
+		if (typeof message.result.total === "number") {
+			parts.push(t("balance.detailTotal", message.result.total));
+		}
+		if (typeof message.result.used === "number") {
+			parts.push(t("balance.detailUsed", message.result.used));
+		}
+		if (message.result.extra) {
+			parts.push(message.result.extra);
+		}
+		detail.textContent = parts.join(" · ");
+		const url = document.createElement("div");
+		url.className = "balance-test-url";
+		url.textContent = message.result.requestUrl;
+		balanceTestResultElement.append(title, detail, url);
+	}
+	balanceTestResultElement.style.display = "block";
+}
+
+function saveBalanceConfig() {
+	const provider = balanceModalProvider;
+	if (!provider) {
+		return;
+	}
+	const collected = collectBalanceConfig();
+	if (!collected.ok) {
+		renderBalanceTestResult({ error: collected.error });
+		return;
+	}
+	const row = providerTableBody.querySelector(`tr[data-provider="${CSS.escape(provider)}"]`);
+	if (!row) {
+		// The provider row is gone; nothing sensible to save against.
+		closeBalanceModal();
+		return;
+	}
+	// The host replaces the whole provider record, so send the row's current values too.
+	const providerData = collectProviderRowValues(row);
+	const parsedHeaders = parseJsonObject(providerData.headers, "advanced.headersLabel");
+	if (!parsedHeaders.ok) {
+		showProviderError(parsedHeaders.error);
+		return;
+	}
+	showProviderError("");
+	postOperation(
+		{
+			type: "updateProvider",
+			provider,
+			baseUrl: providerData.baseUrl || undefined,
+			apiKey: providerData.apiKey || undefined,
+			apiMode: providerData.apiMode || undefined,
+			headers: parsedHeaders.value,
+			sessionIdHeader: providerData.sessionIdHeader,
+			balance: collected.value,
+		},
+		() => {
+			// Show the new configuration at once, then let the host's init refresh
+			// reconcile anything else it changed.
+			applySavedBalanceConfig(provider, collected.value);
+			closeBalanceModal();
+		},
+		(error) => renderBalanceTestResult({ error })
+	);
+}
+
+// Balance dialog events
+document.querySelectorAll("[data-balance-dismiss]").forEach((element) => {
+	element.addEventListener("click", closeBalanceModal);
+});
+
+balancePresetInput.addEventListener("change", () => {
+	applyBalancePresetDefaults();
+	updateBalancePresetHint();
+	hideBalanceTestResult();
+});
+
+document.getElementById("balanceTest").addEventListener("click", () => {
+	if (!balanceModalProvider) {
+		return;
+	}
+	const collected = collectBalanceConfig();
+	if (!collected.ok) {
+		renderBalanceTestResult({ error: collected.error });
+		return;
+	}
+	balanceTestResultElement.replaceChildren();
+	balanceTestResultElement.className = "balance-test-result pending";
+	balanceTestResultElement.textContent = t("balance.statusQuerying");
+	balanceTestResultElement.style.display = "block";
+	vscode.postMessage({ type: "testBalance", provider: balanceModalProvider, balance: collected.value });
+});
+
+document.getElementById("balanceSave").addEventListener("click", saveBalanceConfig);
+
+document.addEventListener("keydown", (event) => {
+	if (event.key === "Escape" && balanceModal.style.display !== "none") {
+		closeBalanceModal();
+	}
+});
+
 function renderModels() {
 	const models = state.models.filter((m) => m.providerConfig !== true).sort((a, b) => a.id.localeCompare(b.id));
 	if (!models.length) {
-		modelTableBody.replaceChildren(createNoDataRow(11, "No models"));
+		modelTableBody.replaceChildren(createNoDataRow(11, t("models.empty")));
 		return;
 	}
 
@@ -643,7 +1157,7 @@ function renderModels() {
 			if (model) {
 				// Show the model form in edit mode
 				modelFormSection.style.display = "block";
-				modelFormTitle.textContent = `Edit Model: ${provider} / ${modelId}`;
+				modelFormTitle.textContent = t("modelForm.editTitle", provider, modelId);
 				populateModelForm(model);
 			}
 		});
@@ -663,7 +1177,7 @@ function renderModels() {
 			vscode.postMessage({
 				type: "requestConfirm",
 				id: confirmId,
-				message: `Are you sure you want to delete model ${provider} / ${modelId}?`,
+				message: t("confirm.deleteModel", provider, modelId),
 				action: "deleteModel",
 			});
 		});
@@ -691,8 +1205,8 @@ function createModelRow(model) {
 	const actions = document.createElement("td");
 	actions.className = "action-buttons";
 	for (const [className, label] of [
-		["update-model-btn", "Edit"],
-		["delete-model-btn danger", "Delete"],
+		["update-model-btn", t("common.edit")],
+		["delete-model-btn danger", t("common.delete")],
 	]) {
 		const button = document.createElement("button");
 		button.className = className;
@@ -741,7 +1255,7 @@ function resetModelForm() {
 	modelHeadersInput.value = "";
 	modelExtraInput.value = "";
 	advancedSettingsContent.style.display = "none";
-	toggleAdvancedSettingsBtn.textContent = "Show Advanced Settings";
+	toggleAdvancedSettingsBtn.textContent = t("advanced.show");
 	// Remove editing attribute
 	modelIdInput.removeAttribute("data-editing");
 	modelIdInput.removeAttribute("data-original-provider");
@@ -753,11 +1267,11 @@ function resetModelForm() {
 // Collect model form data
 function collectModelFormData() {
 	const isEditing = modelIdInput.hasAttribute("data-editing");
-	const headers = parseJsonObject(modelHeadersInput.value, "Custom Headers");
+	const headers = parseJsonObject(modelHeadersInput.value, "advanced.headersLabel");
 	if (!headers.ok) {
 		return headers;
 	}
-	const extra = parseJsonObject(modelExtraInput.value, "Extra Parameters");
+	const extra = parseJsonObject(modelExtraInput.value, "advanced.extraLabel");
 	if (!extra.ok) {
 		return extra;
 	}
@@ -857,19 +1371,19 @@ function validateModelData(modelData) {
 	showModelError("");
 
 	if (!modelData.id) {
-		showModelError("Model ID is required.");
+		showModelError(t("error.modelIdRequired"));
 		return false;
 	}
 	if (modelData.id.startsWith("__provider__")) {
-		showModelError('Model IDs beginning with "__provider__" are reserved for internal provider metadata.');
+		showModelError(t("error.reservedModelIdPrefix"));
 		return false;
 	}
 	if (!modelData.owned_by) {
-		showModelError("Provider ID is required.");
+		showModelError(t("error.providerIdRequired"));
 		return false;
 	}
 	if (!modelData.displayName) {
-		showModelError("Display Name is required.");
+		showModelError(t("error.displayNameRequired"));
 		return false;
 	}
 
@@ -889,9 +1403,7 @@ function validateModelData(modelData) {
 		});
 
 	if (hasDuplicate) {
-		showModelError(
-			`Model ID "${modelData.id}" already exists for provider "${modelData.owned_by}". Provider and Model ID must be unique.`
-		);
+		showModelError(t("error.duplicateModelId", modelData.id, modelData.owned_by));
 		return false;
 	}
 
@@ -913,54 +1425,54 @@ function validateModelData(modelData) {
 		);
 
 	if (hasDuplicateDisplayName) {
-		showModelError(`Display Name "${modelData.displayName}" is already used. Display Names must be globally unique.`);
+		showModelError(t("error.duplicateDisplayName", modelData.displayName));
 		return false;
 	}
 
 	// Validate numeric fields if provided
 	if (modelData.context_length !== undefined && (isNaN(modelData.context_length) || modelData.context_length <= 0)) {
-		showModelError("Context Length must be a positive number.");
+		showModelError(t("error.contextLengthPositive"));
 		return false;
 	}
 	if (modelData.max_tokens !== undefined && (isNaN(modelData.max_tokens) || modelData.max_tokens <= 0)) {
-		showModelError("Max Tokens must be a positive number.");
+		showModelError(t("error.maxTokensPositive"));
 		return false;
 	}
 	if (
 		modelData.max_completion_tokens !== undefined &&
 		(isNaN(modelData.max_completion_tokens) || modelData.max_completion_tokens <= 0)
 	) {
-		showModelError("Max Completion Tokens must be a positive number.");
+		showModelError(t("error.maxCompletionTokensPositive"));
 		return false;
 	}
 	// Prevent both max_tokens and max_completion_tokens from being set simultaneously
 	if (modelData.max_tokens !== undefined && modelData.max_completion_tokens !== undefined) {
-		showModelError("Cannot set both 'max_tokens' and 'max_completion_tokens'. Use 'max_completion_tokens' only.");
+		showModelError(t("error.bothMaxTokens"));
 		return false;
 	}
 	if (
 		modelData.temperature !== undefined &&
 		(isNaN(modelData.temperature) || modelData.temperature < 0 || modelData.temperature > 2)
 	) {
-		showModelError("Temperature must be between 0 and 2.");
+		showModelError(t("error.temperatureRange"));
 		return false;
 	}
 	if (modelData.top_p !== undefined && (isNaN(modelData.top_p) || modelData.top_p < 0 || modelData.top_p > 1)) {
-		showModelError("Top P must be between 0 and 1.");
+		showModelError(t("error.topPRange"));
 		return false;
 	}
 	if (modelData.delay !== undefined && (isNaN(modelData.delay) || modelData.delay < 0)) {
-		showModelError("Delay must be a non-negative number.");
+		showModelError(t("error.delayNonNegative"));
 		return false;
 	}
 
 	// Validate JSON fields
 	if (modelData.headers && typeof modelData.headers !== "object") {
-		showModelError("Custom Headers must be a valid JSON object.");
+		showModelError(t("error.headersJson"));
 		return false;
 	}
 	if (modelData.extra && typeof modelData.extra !== "object") {
-		showModelError("Extra Parameters must be a valid JSON object.");
+		showModelError(t("error.extraJson"));
 		return false;
 	}
 
@@ -975,11 +1487,11 @@ function populateModelIdDropdown(models) {
 	dropdownContent.innerHTML = "";
 
 	if (!modelsArray.length) {
-		dropdownHeader.textContent = "No models available";
+		dropdownHeader.textContent = t("models.emptyDropdown");
 		return;
 	}
 
-	dropdownHeader.textContent = `Select Model (${modelsArray.length} available)`;
+	dropdownHeader.textContent = t("models.selectAvailable", modelsArray.length);
 
 	// Create option elements
 	modelsArray.forEach((model) => {
@@ -1172,7 +1684,7 @@ function initDropdownEvents() {
 
 		// Update header with filtered count
 		const visibleCount = Array.from(options).filter((opt) => opt.style.display !== "none").length;
-		dropdownHeader.textContent = `Select Model (${visibleCount} matching)`;
+		dropdownHeader.textContent = t("models.selectMatching", visibleCount);
 	});
 }
 

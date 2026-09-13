@@ -2,6 +2,22 @@
 
 > This project is a fork of [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot), published as **PolyLLM** (`creeperw.polyllm`). Entries below 0.4.3 come from the upstream project.
 
+## 0.4.5
+
+- Feat: Add provider balance queries. Configure an endpoint per provider in the Configuration UI (**Balance** column) and PolyLLM shows the remaining credit in the status bar and through the **PolyLLM: Show Provider Balances** command.
+- Built-in presets for DeepSeek, SiliconFlow (China and international), OpenRouter, StepFun, Novita AI, and New API relays. Any other provider can be described by hand: URL, method, authentication, extra headers, and response fields.
+- Built-in presets for the Kimi For Coding, Zhipu GLM, MiniMax, and OpenCode Go coding plans. These endpoints report how much of a rolling window is left rather than an amount, so the presets express the window as a percentage out of 100 and share the same column and low-balance colouring as the balances.
+- Response fields are JSON paths with optional arithmetic (`data.quota / 500000`). Usage windows can be picked by field rather than by array position (`limits[unit == 3].percentage`), because the provider does not promise their order. No code from a configuration is ever executed.
+- Fix: The SiliconFlow preset read `data.balance`, which is only the granted credit, so a topped-up account showed a balance that was too low. It now reads `data.totalBalance`.
+- Query failures are classified: transient problems (timeout, network, 5xx) keep the last known value for ten minutes and mark it as stale, while authentication and 404 errors surface immediately.
+- Refreshing is manual by default; set `intervalMinutes` per provider to enable a background refresh.
+- Feat: The Configuration UI gains a balance column, a balance configuration dialog with a **Test** button, and a general visual pass.
+- Fix: The balance column showed `Not set` for a provider whose query was configured but switched off, which made a successful save look like it had failed. It now shows `Disabled`, and picking a preset turns the query on instead of silently storing an inactive configuration.
+- Fix: Reopening the Configuration UI showed `Not queried` for balances that had already been queried, even though the status bar kept showing them. The panel now receives the cached results when it opens.
+- Fix: Saving a provider configuration left the previous balance on screen until the next query. The cached result is now dropped on save, matching the extension host.
+- Fix: The **Add Provider** row was one cell short after the balance column was added, which shifted its buttons into the wrong columns.
+- Feat: The extension is available in English and Simplified Chinese. The Configuration UI, its notifications, the command palette entries and the settings page all follow the VS Code display language, and the panel header carries a language picker that overrides it. Set `oaicopilot.language` to `auto` (the default), `en` or `zh-CN` to choose outside the panel.
+
 ## 0.4.4
 
 - Update the extension icon.
