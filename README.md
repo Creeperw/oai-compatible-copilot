@@ -13,8 +13,8 @@ English | [简体中文](README.zh-CN.md)
 > **PolyLLM** is a fork of [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot) by Johnny Zhao (MIT).
 > It keeps the original configuration format (`oaicopilot.*` settings and provider IDs), so existing setups continue to work.
 
-[![CI](https://github.com/Creeperw/oai-compatible-copilot/actions/workflows/release.yml/badge.svg)](https://github.com/Creeperw/oai-compatible-copilot/actions)
-[![License](https://img.shields.io/github/license/Creeperw/oai-compatible-copilot?color=orange&label=License)](https://github.com/Creeperw/oai-compatible-copilot/blob/main/LICENSE)
+[![CI](https://github.com/Creeperw/polyllm/actions/workflows/release.yml/badge.svg)](https://github.com/Creeperw/polyllm/actions)
+[![License](https://img.shields.io/github/license/Creeperw/polyllm?color=orange&label=License)](https://github.com/Creeperw/polyllm/blob/main/LICENSE)
 
 ## ✨ Features
 - **Multi-API support**: OpenAI/Ollama/Anthropic/Gemini APIs (ModelScope, SiliconFlow, DeepSeek...)
@@ -616,11 +616,11 @@ All parameters support individual configuration for different models, providing 
 
 Thanks to all the people who contribute.
 
-- [Contributors](https://github.com/Creeperw/oai-compatible-copilot/graphs/contributors)
+- [Contributors](https://github.com/Creeperw/polyllm/graphs/contributors)
 - [Hugging Face Chat Extension](https://github.com/huggingface/huggingface-vscode-chat)
 - [VS Code Chat Provider API](https://code.visualstudio.com/api/extension-guides/ai/language-model-chat-provider)
 
 ## Support & License
-- Open issues: https://github.com/Creeperw/oai-compatible-copilot/issues
+- Open issues: https://github.com/Creeperw/polyllm/issues
 - License: MIT License Copyright (c) 2025 Johnny Zhao
 - This fork is maintained by Creeperw. The original copyright notice above is preserved as required by the MIT License.

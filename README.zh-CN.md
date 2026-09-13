@@ -13,8 +13,8 @@
 > **PolyLLM** 是 [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot)（作者 Johnny Zhao，MIT 许可）的 fork。
 > 它保留原有的配置格式（`oaicopilot.*` 设置与供应商 ID），因此已有配置可继续使用。
 
-[![CI](https://github.com/Creeperw/oai-compatible-copilot/actions/workflows/release.yml/badge.svg)](https://github.com/Creeperw/oai-compatible-copilot/actions)
-[![License](https://img.shields.io/github/license/Creeperw/oai-compatible-copilot?color=orange&label=License)](https://github.com/Creeperw/oai-compatible-copilot/blob/main/LICENSE)
+[![CI](https://github.com/Creeperw/polyllm/actions/workflows/release.yml/badge.svg)](https://github.com/Creeperw/polyllm/actions)
+[![License](https://img.shields.io/github/license/Creeperw/polyllm?color=orange&label=License)](https://github.com/Creeperw/polyllm/blob/main/LICENSE)
 
 ## ✨ 特性
 - **多 API 支持**：OpenAI/Ollama/Anthropic/Gemini API（ModelScope、SiliconFlow、DeepSeek 等）
@@ -616,11 +616,11 @@ OpenCode Zen（按量付费）完全没有公开的余额或用量接口，因�
 
 感谢所有贡献者。
 
-- [贡献者](https://github.com/Creeperw/oai-compatible-copilot/graphs/contributors)
+- [贡献者](https://github.com/Creeperw/polyllm/graphs/contributors)
 - [Hugging Face Chat 扩展](https://github.com/huggingface/huggingface-vscode-chat)
 - [VS Code Chat Provider API](https://code.visualstudio.com/api/extension-guides/ai/language-model-chat-provider)
 
 ## 支持 & 许可证
-- 提交 Issue：https://github.com/Creeperw/oai-compatible-copilot/issues
+- 提交 Issue：https://github.com/Creeperw/polyllm/issues
 - 许可证：MIT License Copyright (c) 2025 Johnny Zhao
 - 本 fork 由 Creeperw 维护。按 MIT 许可证要求，上方原始版权声明予以保留。
