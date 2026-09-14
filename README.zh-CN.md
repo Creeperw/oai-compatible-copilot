@@ -60,7 +60,9 @@
 - OpenAI 兼容供应商的 API 密钥。
 
 ## ⚡ 快速开始
-1. [在此处](https://marketplace.visualstudio.com/items?itemName=creeperw.polyllm)安装 PolyLLM 扩展。
+1. 从[最新 Release](https://github.com/Creeperw/polyllm/releases/latest)安装 PolyLLM 扩展：
+   下载 `extension.vsix`，然后在命令面板运行 **Extensions: Install from VSIX...**。
+   Marketplace 上架仍在审核中。
 2. 从命令面板运行 **PolyLLM: Open Configuration UI**。
 3. 添加供应商，并填写其 Base URL、API Key 和 API 模式。
 4. 添加模型，为每个模型填写全局唯一的 Display Name。

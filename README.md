@@ -66,7 +66,9 @@ own default.
 - OpenAI-compatible provider API key.
 
 ## ⚡ Quick Start
-1. Install the PolyLLM extension [here](https://marketplace.visualstudio.com/items?itemName=creeperw.polyllm).
+1. Install the PolyLLM extension from the [latest release](https://github.com/Creeperw/polyllm/releases/latest):
+   download `extension.vsix`, then run **Extensions: Install from VSIX...** from the Command Palette.
+   The Marketplace listing is still under review.
 2. Run **PolyLLM: Open Configuration UI** from the Command Palette.
 3. Add a provider with its Base URL, API Key, and API mode.
 4. Add one or more models with globally unique Display Names.
