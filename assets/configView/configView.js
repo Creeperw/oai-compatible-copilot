@@ -140,8 +140,14 @@ const modelFormSection = document.getElementById("modelFormSection");
 const modelFormTitle = document.getElementById("modelFormTitle");
 const modelIdInput = document.getElementById("modelIdInput");
 const modelIdDropdown = document.getElementById("modelIdDropdown");
+const modelIdField = document.getElementById("modelIdField");
+const modelIdChips = document.getElementById("modelIdChips");
+const modelIdFilter = document.getElementById("modelIdFilter");
+const modelIdFilterCount = document.getElementById("modelIdFilterCount");
+const closeModelFormBtn = document.getElementById("closeModelForm");
 const modelProviderInput = document.getElementById("modelProvider");
 const modelDisplayNameInput = document.getElementById("modelDisplayName");
+const displayNameBatchHint = document.getElementById("displayNameBatchHint");
 const modelConfigIdInput = document.getElementById("modelConfigId");
 const modelBaseUrlInput = document.getElementById("modelBaseUrl");
 const modelFamilyInput = document.getElementById("modelFamily");
@@ -182,6 +188,29 @@ const modelErrorElement = document.getElementById("modelError");
 // Dropdown elements
 const dropdownContent = modelIdDropdown.querySelector(".dropdown-content");
 const dropdownHeader = modelIdDropdown.querySelector(".dropdown-header");
+const modelIdSelectAll = document.getElementById("modelIdSelectAll");
+const modelIdClearSelection = document.getElementById("modelIdClearSelection");
+const modelIdSelectionCount = document.getElementById("modelIdSelectionCount");
+const dropdownFooter = modelIdDropdown.querySelector(".dropdown-footer");
+const modelTableErrorElement = document.getElementById("modelTableError");
+const modelSelectionCount = document.getElementById("modelSelectionCount");
+const batchEditPanel = document.getElementById("batchEditPanel");
+const batchEditFields = document.getElementById("batchEditFields");
+const batchEditCount = document.getElementById("batchEditCount");
+const batchEditModelsBtn = document.getElementById("batchEditModels");
+const modelSelectAll = document.getElementById("modelSelectAll");
+
+/** Selection, the two editable columns, and the action buttons. */
+const MODEL_TABLE_COLUMNS = 13;
+
+/** Rows ticked for the batch editor, keyed so a rename cannot leave a stale entry. */
+const selectedModelKeys = new Set();
+
+function modelKey(provider, modelId) {
+	return `${provider}\u0000${modelId}`;
+}
+const testModelConnectionBtn = document.getElementById("testModelConnection");
+const testConnectionStatus = document.getElementById("testConnectionStatus");
 
 function createOperationId(prefix) {
 	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -374,11 +403,10 @@ document.getElementById("addProvider").addEventListener("click", () => {
 
 // Add Model button event listeners
 document.getElementById("addModel").addEventListener("click", () => {
-	// Show the model form
-	modelFormSection.style.display = "block";
-	modelFormTitle.textContent = t("modelForm.addTitle");
-	// Reset form
+	// Reset first, so the modal opens with the defaults already in place.
 	resetModelForm();
+	modelFormTitle.textContent = t("modelForm.addTitle");
+	modelFormSection.style.display = "flex";
 });
 
 // Provider dropdown change listener. Connection fields stay empty unless the
@@ -398,48 +426,35 @@ modelProviderInput.addEventListener("change", () => {
 toggleAdvancedSettingsBtn.addEventListener("click", () => {
 	const isCurrentlyVisible = advancedSettingsContent.style.display !== "none";
 	advancedSettingsContent.style.display = isCurrentlyVisible ? "none" : "block";
-	toggleAdvancedSettingsBtn.textContent = isCurrentlyVisible ? t("advanced.show") : t("advanced.hide");
+	toggleAdvancedSettingsBtn.setAttribute("aria-expanded", isCurrentlyVisible ? "false" : "true");
 });
 
-// Save Model button event listener
-saveModelBtn.addEventListener("click", () => {
-	const collected = collectModelFormData();
-	if (!collected.ok) {
-		showModelError(collected.error);
-		return;
-	}
-	const modelData = collected.value;
-	if (!validateModelData(modelData)) {
-		return;
-	}
-
-	// For updates, ensure the model ID remains unchanged
-	const isEditing = modelIdInput.hasAttribute("data-editing");
-	if (isEditing) {
-		// Remove helper attributes from the model data before sending
-		let originalProvider = modelData.originalProvider;
-		let originalModelId = modelData.originalModelId;
-		delete modelData.originalProvider;
-		delete modelData.originalModelId;
-
-		postOperation(
-			{
-				type: "updateModel",
-				model: modelData,
-				originalProvider: originalProvider,
-				originalModelId: originalModelId,
-			},
-			closeModelForm,
-			showModelError
-		);
-	} else {
-		postOperation({ type: "addModel", model: modelData }, closeModelForm, showModelError);
-	}
-});
+// The form's single submit button.
+saveModelBtn.addEventListener("click", submitModelForm);
 
 function closeModelForm() {
 	modelFormSection.style.display = "none";
 	resetModelForm();
+}
+
+// The modal closes on the backdrop, the close button and Escape, so every
+// route out of the form goes through the same reset.
+function initModelModalEvents() {
+	modelFormSection.querySelectorAll("[data-model-dismiss]").forEach((element) => {
+		element.addEventListener("click", closeModelForm);
+	});
+
+	document.addEventListener("keydown", (event) => {
+		if (event.key !== "Escape" || modelFormSection.style.display === "none") {
+			return;
+		}
+		// While the list is open Escape only closes the list.
+		if (modelIdDropdown.classList.contains("show")) {
+			hideDropdown();
+			return;
+		}
+		closeModelForm();
+	});
 }
 
 // Cancel Model button event listener
@@ -475,6 +490,10 @@ window.addEventListener("message", (event) => {
 			// newly created rows are built in the right language.
 			applyTranslations();
 			populateLanguageOptions();
+			// Labelled from the catalogue, so it can only be built once the
+			// catalogue has arrived. Rebuilt here as well, so a language change
+			// reaches the batch editor too.
+			renderBatchEditFields();
 			state.balancePresets = message.payload.balancePresets || [];
 			populateBalancePresetOptions();
 			// Seed the cached results so a reopened panel shows what the status bar
@@ -511,14 +530,30 @@ window.addEventListener("message", (event) => {
 			populateModelIdDropdown(message.models);
 			break;
 		case "modelsFetchError":
-			// Handle error from fetchModels
-			dropdownHeader.textContent = t("error.fetchModelsHeader");
+			// Handle error from fetchModels. The header and footer carry live controls,
+			// so the failure is reported inside the list instead of replacing them.
+			dropdownHeader.hidden = true;
+			dropdownFooter.hidden = true;
+			selectedModelIds.clear();
 			dropdownContent.replaceChildren();
 			const fetchError = document.createElement("div");
 			fetchError.className = "dropdown-option error";
 			fetchError.textContent = t("error.fetchModelsFailed");
 			dropdownContent.appendChild(fetchError);
 			console.error("[oaicopilot] Failed to fetch models:", message.error);
+			break;
+		case "testConnectionResult":
+			testModelConnectionBtn.disabled = false;
+			if (message.ok) {
+				setTestStatus(
+					"success",
+					message.modelId && !message.models.includes(message.modelId)
+						? t("modelForm.testOkModelMissing", message.count, message.modelId)
+						: t("modelForm.testOk", message.count)
+				);
+			} else {
+				setTestStatus("error", t("modelForm.testFailed", message.error));
+			}
 			break;
 		case "balanceResult":
 			if (message.test) {
@@ -1138,14 +1173,76 @@ document.addEventListener("keydown", (event) => {
 	}
 });
 
+// A collapsible heading that introduces one provider's models.
+function createModelGroupRow(provider, count) {
+	const row = document.createElement("tr");
+	row.className = "model-group-row";
+	row.dataset.provider = provider;
+
+	const cell = document.createElement("td");
+	cell.colSpan = MODEL_TABLE_COLUMNS;
+	cell.className = "model-group-cell";
+
+	const name = document.createElement("span");
+	name.className = "model-group-name";
+	name.textContent = provider;
+
+	const badge = document.createElement("span");
+	badge.className = "model-group-count";
+	badge.textContent = t("models.groupCount", count);
+
+	// The flex row lives inside the cell: a td that becomes a flex container
+	// stops being a table cell, and the anonymous cell the browser substitutes
+	// does not inherit colspan, which collapsed the heading to one column.
+	const heading = document.createElement("div");
+	heading.className = "model-group-heading";
+	heading.append(name, badge);
+
+	cell.appendChild(heading);
+	row.appendChild(cell);
+
+	row.addEventListener("click", () => {
+		const collapsed = row.classList.toggle("collapsed");
+		let sibling = row.nextElementSibling;
+		while (sibling && !sibling.classList.contains("model-group-row")) {
+			sibling.hidden = collapsed;
+			sibling = sibling.nextElementSibling;
+		}
+	});
+
+	return row;
+}
+
 function renderModels() {
-	const models = state.models.filter((m) => m.providerConfig !== true).sort((a, b) => a.id.localeCompare(b.id));
+	const models = state.models.filter((m) => m.providerConfig !== true);
 	if (!models.length) {
-		modelTableBody.replaceChildren(createNoDataRow(11, t("models.empty")));
+		modelTableBody.replaceChildren(createNoDataRow(MODEL_TABLE_COLUMNS, t("models.empty")));
 		return;
 	}
 
-	modelTableBody.replaceChildren(...models.map(createModelRow));
+	// Group by provider so a long list reads as a few short ones, and so the
+	// batch-add dropdown has an obvious counterpart in the table.
+	const groups = new Map();
+	for (const model of models) {
+		const provider = model.owned_by || "";
+		if (!groups.has(provider)) {
+			groups.set(provider, []);
+		}
+		groups.get(provider).push(model);
+	}
+
+	const rows = [];
+	for (const provider of Array.from(groups.keys()).sort((a, b) => a.localeCompare(b))) {
+		const group = groups.get(provider).sort((a, b) => a.id.localeCompare(b.id));
+		rows.push(createModelGroupRow(provider, group.length));
+		group.forEach((model, index) => rows.push(createModelRow(model, index)));
+	}
+
+	modelTableBody.replaceChildren(...rows);
+	bindDisplayNameEditors();
+	bindReasoningEffortEditors();
+	bindModelSelection();
+	updateModelSelectionSummary();
 
 	// Add event listeners for model rows
 	document.querySelectorAll(".update-model-btn").forEach((btn) => {
@@ -1156,7 +1253,7 @@ function renderModels() {
 
 			if (model) {
 				// Show the model form in edit mode
-				modelFormSection.style.display = "block";
+				modelFormSection.style.display = "flex";
 				modelFormTitle.textContent = t("modelForm.editTitle", provider, modelId);
 				populateModelForm(model);
 			}
@@ -1171,7 +1268,7 @@ function renderModels() {
 
 			// Store the action to be performed after confirmation
 			pendingConfirmations.set(confirmId, {
-				action: () => postOperation({ type: "deleteModel", provider, modelId }, () => undefined, showModelError),
+				action: () => postOperation({ type: "deleteModel", provider, modelId }, () => undefined, showModelTableError),
 			});
 
 			vscode.postMessage({
@@ -1184,24 +1281,27 @@ function renderModels() {
 	});
 }
 
-function createModelRow(model) {
+function createModelRow(model, index = 0) {
 	const row = document.createElement("tr");
+	row.className = index % 2 === 1 ? "model-row alt" : "model-row";
 	row.dataset.provider = model.owned_by;
 	row.dataset.modelId = model.id;
-	for (const value of [
-		model.id,
-		model.owned_by,
-		model.displayName || "",
-		model.configId || "",
-		model.context_length || "",
-		model.max_tokens || model.max_completion_tokens || "",
-		model.vision ? "True" : "",
-		model.temperature !== undefined && model.temperature !== null ? model.temperature : "",
-		model.top_p !== undefined && model.top_p !== null ? model.top_p : "",
-		model.delay || "",
-	]) {
-		row.appendChild(createCell(value));
-	}
+	// Selection and the two columns that are edited in place rather than through
+	// the form: a batch add produces a lot of rows that need the same kind of fix.
+	row.append(
+		createSelectionCell(model),
+		createCell(model.id),
+		createCell(model.owned_by),
+		createDisplayNameCell(model),
+		createCell(model.configId || ""),
+		createCell(model.context_length || ""),
+		createCell(model.max_tokens || model.max_completion_tokens || ""),
+		createCell(model.vision ? "True" : ""),
+		createReasoningEffortCell(model),
+		createCell(model.temperature !== undefined && model.temperature !== null ? model.temperature : ""),
+		createCell(model.top_p !== undefined && model.top_p !== null ? model.top_p : ""),
+		createCell(model.delay || "")
+	);
 	const actions = document.createElement("td");
 	actions.className = "action-buttons";
 	for (const [className, label] of [
@@ -1219,6 +1319,376 @@ function createModelRow(model) {
 	return row;
 }
 
+/**
+ * Build the editable Display Name cell.
+ *
+ * A batch add generates one name per model. Renaming twenty of them should not
+ * mean opening twenty forms, so the cell is an input that commits on blur or
+ * Enter and reverts on Escape.
+ */
+function createDisplayNameCell(model) {
+	const cell = document.createElement("td");
+	cell.className = "display-name-cell";
+	const input = document.createElement("input");
+	input.type = "text";
+	input.className = "model-cell-input";
+	input.value = model.displayName || "";
+	input.dataset.provider = model.owned_by;
+	input.dataset.modelId = model.id;
+	input.dataset.original = model.displayName || "";
+	input.title = t("models.displayNameHint");
+	cell.appendChild(input);
+	return cell;
+}
+
+/** Persist an inline Display Name edit, reverting the field when the host rejects it. */
+function commitDisplayName(input) {
+	const provider = input.dataset.provider;
+	const modelId = input.dataset.modelId;
+	const value = input.value.normalize("NFKC").trim();
+	if (value === input.dataset.original) {
+		return;
+	}
+	if (!value) {
+		input.value = input.dataset.original;
+		showModelTableError(t("error.displayNameRequired"));
+		return;
+	}
+
+	const model = state.models.find((item) => item.owned_by === provider && item.id === modelId);
+	if (!model) {
+		return;
+	}
+
+	showModelTableError("");
+	postOperation(
+		{
+			type: "updateModel",
+			model: { ...model, displayName: value },
+			originalProvider: provider,
+			originalModelId: modelId,
+		},
+		() => showModelTableError(""),
+		(error) => {
+			// The rename did not stick, so the table must not keep showing it.
+			input.value = input.dataset.original;
+			showModelTableError(error);
+		}
+	);
+}
+
+/** Wire the inline Display Name inputs, which are rebuilt on every render. */
+function bindDisplayNameEditors() {
+	document.querySelectorAll(".model-cell-input").forEach((input) => {
+		input.addEventListener("change", () => commitDisplayName(input));
+		input.addEventListener("keydown", (event) => {
+			if (event.isComposing) {
+				return;
+			}
+			if (event.key === "Enter") {
+				event.preventDefault();
+				input.blur();
+			} else if (event.key === "Escape") {
+				input.value = input.dataset.original;
+				input.blur();
+			}
+		});
+	});
+}
+
+/** The tick box that marks a row for the batch editor. */
+function createSelectionCell(model) {
+	const cell = document.createElement("td");
+	cell.className = "select-cell";
+	const box = document.createElement("input");
+	box.type = "checkbox";
+	box.className = "model-select-box";
+	box.dataset.provider = model.owned_by;
+	box.dataset.modelId = model.id;
+	box.checked = selectedModelKeys.has(modelKey(model.owned_by, model.id));
+	box.setAttribute("aria-label", t("models.selectRow", model.displayName || model.id));
+	cell.appendChild(box);
+	return cell;
+}
+
+/** Every model the batch editor is allowed to touch, as selection keys. */
+function selectableModelKeys() {
+	return state.models
+		.filter((model) => model.providerConfig !== true)
+		.map((model) => modelKey(model.owned_by, model.id));
+}
+
+/** Sync the count, the header tick box and the batch button with the selection. */
+function updateModelSelectionSummary() {
+	const available = selectableModelKeys();
+	// A model that was deleted or renamed must not stay selected invisibly, or the
+	// batch editor would silently write to fewer rows than the count claims.
+	for (const key of Array.from(selectedModelKeys)) {
+		if (!available.includes(key)) {
+			selectedModelKeys.delete(key);
+		}
+	}
+	const count = selectedModelKeys.size;
+	const summary = count ? t("models.selectedRows", count) : "";
+	modelSelectionCount.textContent = summary;
+	batchEditCount.textContent = summary;
+	batchEditModelsBtn.disabled = count === 0;
+	modelSelectAll.checked = available.length > 0 && count === available.length;
+	modelSelectAll.indeterminate = count > 0 && count < available.length;
+	if (!count && batchEditPanel.style.display !== "none") {
+		closeBatchEdit();
+	}
+}
+
+function bindModelSelection() {
+	document.querySelectorAll(".model-select-box").forEach((box) => {
+		box.addEventListener("change", () => {
+			const key = modelKey(box.dataset.provider, box.dataset.modelId);
+			if (box.checked) {
+				selectedModelKeys.add(key);
+			} else {
+				selectedModelKeys.delete(key);
+			}
+			updateModelSelectionSummary();
+		});
+	});
+}
+
+/**
+ * Build the Reasoning Effort cell.
+ *
+ * This is the setting that most often differs between models in one provider, so it
+ * is editable in the list rather than only in the form.
+ */
+function createReasoningEffortCell(model) {
+	const cell = document.createElement("td");
+	cell.className = "effort-cell";
+	const select = document.createElement("select");
+	select.className = "model-cell-select";
+	select.dataset.provider = model.owned_by;
+	select.dataset.modelId = model.id;
+	select.dataset.original = model.reasoning_effort || "";
+	select.title = t("models.effortHint");
+	for (const option of REASONING_EFFORT_CHOICES) {
+		select.appendChild(new Option(t(option.labelKey), option.value));
+	}
+	select.value = model.reasoning_effort || "";
+	cell.appendChild(select);
+	return cell;
+}
+
+/** Persist an inline Reasoning Effort change, reverting the picker when it fails. */
+function commitReasoningEffort(select) {
+	const provider = select.dataset.provider;
+	const modelId = select.dataset.modelId;
+	if (select.value === select.dataset.original) {
+		return;
+	}
+	const model = state.models.find((item) => item.owned_by === provider && item.id === modelId);
+	if (!model) {
+		return;
+	}
+
+	const updated = { ...model };
+	if (select.value) {
+		updated.reasoning_effort = select.value;
+	} else {
+		// An empty value means the Copilot effort picker stays hidden.
+		delete updated.reasoning_effort;
+	}
+
+	showModelTableError("");
+	postOperation(
+		{ type: "updateModel", model: updated, originalProvider: provider, originalModelId: modelId },
+		() => showModelTableError(""),
+		(error) => {
+			select.value = select.dataset.original;
+			showModelTableError(error);
+		}
+	);
+}
+
+function bindReasoningEffortEditors() {
+	document.querySelectorAll(".model-cell-select").forEach((select) => {
+		select.addEventListener("change", () => commitReasoningEffort(select));
+	});
+}
+
+/**
+ * The fields the batch editor can write.
+ *
+ * Only ticked fields are applied, so one pass can set a single property without
+ * disturbing the twenty others a model carries. A ticked field left empty is
+ * removed from the model, which is how a setting is undone in bulk.
+ */
+const REASONING_EFFORT_CHOICES = [
+	{ value: "", labelKey: "common.none" },
+	{ value: "minimal", labelKey: "reasoning.effortMinimal" },
+	{ value: "low", labelKey: "reasoning.effortLow" },
+	{ value: "medium", labelKey: "reasoning.effortMedium" },
+	{ value: "high", labelKey: "reasoning.effortHigh" },
+	{ value: "xhigh", labelKey: "reasoning.effortXHigh" },
+	{ value: "max", labelKey: "reasoning.effortMax" },
+];
+
+const BOOLEAN_CHOICES = [
+	{ value: "", labelKey: "common.none" },
+	{ value: "true", labelKey: "common.true" },
+	{ value: "false", labelKey: "common.false" },
+];
+
+const BATCH_EDIT_FIELDS = [
+	{ key: "reasoning_effort", labelKey: "advanced.reasoningEffortLabel", choices: REASONING_EFFORT_CHOICES },
+	{ key: "enable_thinking", labelKey: "advanced.enableThinkingLabel", choices: BOOLEAN_CHOICES, boolean: true },
+	{ key: "context_length", labelKey: "models.columnContextLength", number: true },
+	{ key: "max_tokens", labelKey: "models.columnMaxTokens", number: true },
+	{ key: "temperature", labelKey: "models.columnTemperature", number: true },
+	{ key: "top_p", labelKey: "models.columnTopP", number: true },
+	{ key: "delay", labelKey: "global.delayLabel", number: true },
+	{ key: "vision", labelKey: "models.columnVision", choices: BOOLEAN_CHOICES, boolean: true },
+];
+
+function createBatchEditField(field) {
+	const wrapper = document.createElement("div");
+	wrapper.className = "field batch-field";
+	wrapper.dataset.batchField = field.key;
+
+	const toggle = document.createElement("input");
+	toggle.type = "checkbox";
+	toggle.className = "batch-field-toggle";
+
+	const label = document.createElement("label");
+	label.className = "batch-field-label";
+	label.append(toggle, document.createTextNode(t(field.labelKey)));
+
+	let input;
+	if (field.choices) {
+		input = document.createElement("select");
+		input.className = "model-input batch-field-value";
+		for (const choice of field.choices) {
+			input.appendChild(new Option(t(choice.labelKey), choice.value));
+		}
+	} else {
+		input = document.createElement("input");
+		input.type = "text";
+		input.inputMode = "decimal";
+		input.className = "model-input batch-field-value";
+	}
+	input.disabled = true;
+	toggle.addEventListener("change", () => {
+		input.disabled = !toggle.checked;
+		if (toggle.checked) {
+			input.focus();
+		}
+	});
+
+	wrapper.append(label, input);
+	return wrapper;
+}
+
+function renderBatchEditFields() {
+	batchEditFields.replaceChildren(...BATCH_EDIT_FIELDS.map(createBatchEditField));
+}
+
+function openBatchEdit() {
+	showModelTableError("");
+	batchEditPanel.style.display = "block";
+	updateModelSelectionSummary();
+}
+
+function closeBatchEdit() {
+	batchEditPanel.style.display = "none";
+	for (const wrapper of batchEditFields.querySelectorAll(".batch-field")) {
+		const toggle = wrapper.querySelector(".batch-field-toggle");
+		toggle.checked = false;
+		wrapper.querySelector(".batch-field-value").disabled = true;
+	}
+}
+
+/** Read the ticked fields into a patch, and the empty ones into a list to remove. */
+function collectBatchEdit() {
+	const patch = {};
+	const clear = [];
+	for (const field of BATCH_EDIT_FIELDS) {
+		const wrapper = batchEditFields.querySelector(`[data-batch-field="${field.key}"]`);
+		if (!wrapper || !wrapper.querySelector(".batch-field-toggle").checked) {
+			continue;
+		}
+		const raw = wrapper.querySelector(".batch-field-value").value.trim();
+		if (!raw) {
+			clear.push(field.key);
+			continue;
+		}
+		if (field.number) {
+			const parsed = Number(raw);
+			if (!Number.isFinite(parsed)) {
+				showModelTableError(t("error.notANumber", t(field.labelKey)));
+				return undefined;
+			}
+			patch[field.key] = parsed;
+		} else if (field.boolean) {
+			patch[field.key] = raw === "true";
+		} else {
+			patch[field.key] = raw;
+		}
+	}
+	if (!Object.keys(patch).length && !clear.length) {
+		showModelTableError(t("error.noFieldsTicked"));
+		return undefined;
+	}
+	return { patch, clear };
+}
+
+function applyBatchEdit() {
+	const targets = state.models
+		.filter((model) => model.providerConfig !== true && selectedModelKeys.has(modelKey(model.owned_by, model.id)))
+		.map((model) => ({ provider: model.owned_by, modelId: model.id }));
+	if (!targets.length) {
+		showModelTableError(t("error.noModelsSelected"));
+		return;
+	}
+
+	const collected = collectBatchEdit();
+	if (!collected) {
+		return;
+	}
+
+	showModelTableError("");
+	postOperation(
+		{ type: "updateModels", targets, patch: collected.patch, clear: collected.clear },
+		() => {
+			showModelTableError("");
+			closeBatchEdit();
+			selectedModelKeys.clear();
+		},
+		showModelTableError
+	);
+}
+
+function initBatchEditEvents() {
+	batchEditModelsBtn.addEventListener("click", () => {
+		if (batchEditPanel.style.display === "none") {
+			openBatchEdit();
+		} else {
+			closeBatchEdit();
+		}
+	});
+	document.getElementById("applyBatchEdit").addEventListener("click", applyBatchEdit);
+	document.getElementById("cancelBatchEdit").addEventListener("click", closeBatchEdit);
+	modelSelectAll.addEventListener("change", () => {
+		selectedModelKeys.clear();
+		if (modelSelectAll.checked) {
+			for (const key of selectableModelKeys()) {
+				selectedModelKeys.add(key);
+			}
+		}
+		document.querySelectorAll(".model-select-box").forEach((box) => {
+			box.checked = selectedModelKeys.has(modelKey(box.dataset.provider, box.dataset.modelId));
+		});
+		updateModelSelectionSummary();
+	});
+}
+
 // Reset model form
 function resetModelForm() {
 	// Clear any error message
@@ -1230,8 +1700,8 @@ function resetModelForm() {
 	modelConfigIdInput.value = "";
 	modelBaseUrlInput.value = "";
 	modelFamilyInput.value = "";
-	modelContextLengthInput.value = 128000;
-	modelMaxTokensInput.value = 4096;
+	modelContextLengthInput.value = 256000;
+	modelMaxTokensInput.value = 32768;
 	modelVisionInput.value = "";
 	modelApiModeInput.value = "";
 	modelTemperatureInput.value = 0;
@@ -1242,8 +1712,8 @@ function resetModelForm() {
 	modelFrequencyPenaltyInput.value = "";
 	modelPresencePenaltyInput.value = "";
 	modelRepetitionPenaltyInput.value = "";
-	modelReasoningEffortInput.value = "";
-	modelEnableThinkingInput.value = "";
+	modelReasoningEffortInput.value = "high";
+	modelEnableThinkingInput.value = "true";
 	modelThinkingBudgetInput.value = "";
 	modelIncludeReasoningInput.value = "";
 	modelMaxCompletionTokensInput.value = "";
@@ -1251,17 +1721,27 @@ function resetModelForm() {
 	modelReasoningExcludeInput.value = "";
 	modelReasoningEffortORInput.value = "";
 	modelReasoningMaxTokensInput.value = "";
-	modelThinkingTypeInput.value = "";
+	modelThinkingTypeInput.value = "enabled";
 	modelHeadersInput.value = "";
 	modelExtraInput.value = "";
 	advancedSettingsContent.style.display = "none";
-	toggleAdvancedSettingsBtn.textContent = t("advanced.show");
+	toggleAdvancedSettingsBtn.setAttribute("aria-expanded", "false");
 	// Remove editing attribute
 	modelIdInput.removeAttribute("data-editing");
 	modelIdInput.removeAttribute("data-original-provider");
 	modelIdInput.removeAttribute("data-original-id");
-	// Clear dropdown options
+	// Clear the picker, the pills and the filter.
+	selectedModelIds.clear();
 	dropdownContent.innerHTML = "";
+	modelIdFilter.value = "";
+	modelIdFilterCount.textContent = "";
+	modelIdFilterCount.hidden = true;
+	modelIdChips.replaceChildren();
+	modelIdField.classList.remove("is-editing");
+	modelIdInput.readOnly = false;
+	modelDisplayNameInput.disabled = false;
+	displayNameBatchHint.hidden = true;
+	updateSaveButtonLabel();
 }
 
 // Collect model form data
@@ -1281,7 +1761,9 @@ function collectModelFormData() {
 		value: {
 			id: modelIdInput.value.trim(),
 			owned_by: modelProviderInput.value.trim(),
-			displayName: modelDisplayNameInput.value.normalize("NFKC").trim(),
+			displayName:
+				modelDisplayNameInput.value.normalize("NFKC").trim() ||
+				defaultDisplayName(modelIdInput.value.trim(), modelProviderInput.value.trim()),
 			configId: modelConfigIdInput.value.trim() || undefined,
 			baseUrl: modelBaseUrlInput.value.trim() || undefined,
 			family: modelFamilyInput.value.trim() || undefined,
@@ -1352,6 +1834,15 @@ function buildThinkingConfig() {
 	return undefined;
 }
 
+// Show an error next to the model list. The form has its own error slot, and it
+// is usually hidden when the list is what the user is working with.
+function showModelTableError(message) {
+	if (modelTableErrorElement) {
+		modelTableErrorElement.textContent = message;
+		modelTableErrorElement.style.display = message ? "block" : "none";
+	}
+}
+
 // Show error message in the UI
 function showModelError(message) {
 	if (modelErrorElement) {
@@ -1365,157 +1856,188 @@ function showModelError(message) {
 	}
 }
 
-// Validate model data
-function validateModelData(modelData) {
-	// Clear any previous error
-	showModelError("");
-
-	if (!modelData.id) {
-		showModelError(t("error.modelIdRequired"));
-		return false;
-	}
-	if (modelData.id.startsWith("__provider__")) {
-		showModelError(t("error.reservedModelIdPrefix"));
-		return false;
-	}
-	if (!modelData.owned_by) {
-		showModelError(t("error.providerIdRequired"));
-		return false;
-	}
-	if (!modelData.displayName) {
-		showModelError(t("error.displayNameRequired"));
-		return false;
-	}
-
-	// Model ID is unique within a canonical provider. Config ID is descriptive only.
-	const isEditing = modelIdInput.hasAttribute("data-editing");
-	const hasDuplicate = state.models
-		.filter((m) => {
-			if (isEditing) {
-				const isOrigin =
-					m.owned_by.toLowerCase() === modelData.originalProvider.toLowerCase() && m.id === modelData.originalModelId;
-				return !isOrigin;
-			}
-			return true;
-		})
-		.some((m) => {
-			return m.owned_by.toLowerCase() === modelData.owned_by.toLowerCase() && m.id === modelData.id;
-		});
-
-	if (hasDuplicate) {
-		showModelError(t("error.duplicateModelId", modelData.id, modelData.owned_by));
-		return false;
-	}
-
-	const normalizedDisplayName = modelData.displayName.normalize("NFKC").trim().toLowerCase();
-	const hasDuplicateDisplayName = state.models
-		.filter((m) => m.providerConfig !== true)
-		.filter((m) => {
-			if (!isEditing) {
-				return true;
-			}
-			return !(
-				m.owned_by.toLowerCase() === modelData.originalProvider.toLowerCase() && m.id === modelData.originalModelId
-			);
-		})
-		.some(
-			(m) =>
-				typeof m.displayName === "string" &&
-				m.displayName.normalize("NFKC").trim().toLowerCase() === normalizedDisplayName
-		);
-
-	if (hasDuplicateDisplayName) {
-		showModelError(t("error.duplicateDisplayName", modelData.displayName));
-		return false;
-	}
-
-	// Validate numeric fields if provided
-	if (modelData.context_length !== undefined && (isNaN(modelData.context_length) || modelData.context_length <= 0)) {
-		showModelError(t("error.contextLengthPositive"));
-		return false;
-	}
-	if (modelData.max_tokens !== undefined && (isNaN(modelData.max_tokens) || modelData.max_tokens <= 0)) {
-		showModelError(t("error.maxTokensPositive"));
-		return false;
-	}
-	if (
-		modelData.max_completion_tokens !== undefined &&
-		(isNaN(modelData.max_completion_tokens) || modelData.max_completion_tokens <= 0)
-	) {
-		showModelError(t("error.maxCompletionTokensPositive"));
-		return false;
-	}
-	// Prevent both max_tokens and max_completion_tokens from being set simultaneously
-	if (modelData.max_tokens !== undefined && modelData.max_completion_tokens !== undefined) {
-		showModelError(t("error.bothMaxTokens"));
-		return false;
-	}
-	if (
-		modelData.temperature !== undefined &&
-		(isNaN(modelData.temperature) || modelData.temperature < 0 || modelData.temperature > 2)
-	) {
-		showModelError(t("error.temperatureRange"));
-		return false;
-	}
-	if (modelData.top_p !== undefined && (isNaN(modelData.top_p) || modelData.top_p < 0 || modelData.top_p > 1)) {
-		showModelError(t("error.topPRange"));
-		return false;
-	}
-	if (modelData.delay !== undefined && (isNaN(modelData.delay) || modelData.delay < 0)) {
-		showModelError(t("error.delayNonNegative"));
-		return false;
-	}
-
-	// Validate JSON fields
-	if (modelData.headers && typeof modelData.headers !== "object") {
-		showModelError(t("error.headersJson"));
-		return false;
-	}
-	if (modelData.extra && typeof modelData.extra !== "object") {
-		showModelError(t("error.extraJson"));
-		return false;
-	}
-
-	return true;
-}
-
-// Function to populate the model ID datalist
+// Populate the model picker.
+//
+// The list only ever fills the field: ticking a row turns it into a pill and
+// nothing is created until the form's single Save button is pressed.
 function populateModelIdDropdown(models) {
 	const modelsArray = Array.from(models || []);
 
 	// Clear existing options
 	dropdownContent.innerHTML = "";
+	selectedModelIds.clear();
+	modelIdSelectAll.checked = false;
+	modelIdSelectAll.indeterminate = false;
 
 	if (!modelsArray.length) {
-		dropdownHeader.textContent = t("models.emptyDropdown");
+		dropdownHeader.hidden = true;
+		dropdownFooter.hidden = true;
+		const empty = document.createElement("div");
+		empty.className = "dropdown-option error";
+		empty.textContent = t("models.emptyDropdown");
+		dropdownContent.appendChild(empty);
 		return;
 	}
 
-	dropdownHeader.textContent = t("models.selectAvailable", modelsArray.length);
+	dropdownHeader.hidden = false;
+	dropdownFooter.hidden = false;
+
+	// A model that is already configured for this provider cannot be added twice,
+	// so it is shown as taken rather than offered and then rejected.
+	const configured = configuredModelIds(modelProviderInput.value);
 
 	// Create option elements
 	modelsArray.forEach((model) => {
-		const option = document.createElement("div");
+		const option = document.createElement("label");
 		option.className = "dropdown-option";
-		option.textContent = model.id;
 		option.dataset.modelId = model.id;
 
-		// Add click event
-		option.addEventListener("click", () => {
-			modelIdInput.value = model.id;
-			hideDropdown();
+		const checkbox = document.createElement("input");
+		checkbox.type = "checkbox";
+		checkbox.dataset.modelId = model.id;
 
-			// Remove selection from all options
-			dropdownContent.querySelectorAll(".dropdown-option").forEach((opt) => {
-				opt.classList.remove("selected");
-			});
+		const label = document.createElement("span");
+		label.className = "dropdown-option-label";
+		label.textContent = model.id;
+		label.title = model.id;
 
-			// Add selection to clicked option
-			option.classList.add("selected");
+		if (configured.has(model.id)) {
+			option.classList.add("already-configured");
+			checkbox.disabled = true;
+			label.title = `${model.id} — ${t("models.alreadyConfigured")}`;
+		}
+
+		option.append(checkbox, label);
+
+		checkbox.addEventListener("change", () => {
+			if (checkbox.checked) {
+				selectedModelIds.add(model.id);
+			} else {
+				selectedModelIds.delete(model.id);
+			}
+			renderModelIdChips();
+			updateSelectionSummary();
 		});
 
 		dropdownContent.appendChild(option);
 	});
+
+	updateSelectionSummary();
+	applyModelFilter();
+}
+
+// The name a model gets when the field is left blank. The provider is part of
+// it because a bare model id is ambiguous once two providers offer the same one.
+function defaultDisplayName(modelId, provider) {
+	return provider ? `${modelId} / ${provider}` : modelId;
+}
+
+// Model ids that already exist under a provider, lower-cased for comparison.
+function configuredModelIds(provider) {
+	const canonical = (provider || "").toLowerCase();
+	return new Set(
+		state.models
+			.filter((m) => m.providerConfig !== true && (m.owned_by || "").toLowerCase() === canonical)
+			.map((m) => m.id)
+	);
+}
+
+// How many models are ticked, and what the footer says about them.
+function updateSelectionSummary() {
+	const total = dropdownContent.querySelectorAll(".dropdown-option input[type=checkbox]").length;
+	const selected = selectedModelIds.size;
+	modelIdSelectionCount.textContent = selected
+		? t("models.selectedCount", selected, total)
+		: t("models.selectAvailable", total);
+	modelIdSelectAll.checked = total > 0 && selected === total;
+	modelIdSelectAll.indeterminate = selected > 0 && selected < total;
+}
+
+// Ids the form is about to create: the pills, plus whatever is typed but not
+// yet a pill. Counting the typed text is what keeps adding one model as quick
+// as it was before the field became multi-valued.
+function pendingModelIds() {
+	const ids = Array.from(selectedModelIds);
+	const typed = modelIdInput.value.normalize("NFKC").trim();
+	if (typed && !ids.includes(typed)) {
+		ids.push(typed);
+	}
+	return ids;
+}
+
+// Turn a ticked model into a pill the user can remove again.
+function renderModelIdChips() {
+	modelIdChips.replaceChildren();
+
+	selectedModelIds.forEach((id) => {
+		const chip = document.createElement("span");
+		chip.className = "model-id-chip";
+
+		const label = document.createElement("span");
+		label.className = "model-id-chip-label";
+		label.textContent = id;
+		label.title = id;
+		chip.appendChild(label);
+
+		const remove = document.createElement("button");
+		remove.type = "button";
+		remove.className = "model-id-chip-remove";
+		remove.textContent = "\u2715";
+		remove.title = t("models.removeModel", id);
+		remove.setAttribute("aria-label", t("models.removeModel", id));
+		remove.addEventListener("click", () => {
+			selectedModelIds.delete(id);
+			// The tick has to follow the pill, or the list would claim a model is
+			// still chosen after it was removed.
+			const box = dropdownContent.querySelector(`.dropdown-option input[data-model-id="${CSS.escape(id)}"]`);
+			if (box) {
+				box.checked = false;
+			}
+			renderModelIdChips();
+			updateSelectionSummary();
+		});
+		chip.appendChild(remove);
+
+		modelIdChips.appendChild(chip);
+	});
+
+	updateSaveButtonLabel();
+	updateDisplayNameAvailability();
+}
+
+// One button for the whole form, labelled with what it will actually do.
+function updateSaveButtonLabel() {
+	if (modelIdInput.hasAttribute("data-editing")) {
+		saveModelBtn.textContent = t("modelForm.saveChanges");
+		return;
+	}
+	const count = pendingModelIds().length;
+	saveModelBtn.textContent = count > 1 ? t("modelForm.saveMany", count) : t("modelForm.save");
+}
+
+// A single typed name cannot be shared by several models, so the field is
+// switched off rather than quietly ignored.
+function updateDisplayNameAvailability() {
+	const batch = !modelIdInput.hasAttribute("data-editing") && pendingModelIds().length > 1;
+	modelDisplayNameInput.disabled = batch;
+	displayNameBatchHint.hidden = !batch;
+}
+
+// Filter the picker from its own search box, so the text box in the field is
+// never ambiguous between a filter and a model id.
+function applyModelFilter() {
+	const term = modelIdFilter.value.normalize("NFKC").trim().toLowerCase();
+	const options = Array.from(dropdownContent.querySelectorAll(".dropdown-option"));
+	let visible = 0;
+	options.forEach((option) => {
+		const matches = !term || option.dataset.modelId.toLowerCase().includes(term);
+		option.style.display = matches ? "flex" : "none";
+		if (matches) {
+			visible += 1;
+		}
+	});
+	modelIdFilterCount.textContent = term ? t("models.selectMatching", visible) : "";
+	modelIdFilterCount.hidden = !term;
 }
 
 // Function to populate the commit model dropdown
@@ -1542,8 +2064,216 @@ function populateCommitModelDropdown() {
 	});
 }
 
+// Ids chosen in the picker and shown as pills.
+const selectedModelIds = new Set();
+
+// The only path that creates models. Every id in the field is built from the
+// same form values, so one model and twenty models are the same round trip.
+function submitModelForm() {
+	showModelError("");
+
+	const provider = modelProviderInput.value.trim();
+	if (!provider) {
+		showModelError(t("error.providerIdRequired"));
+		return;
+	}
+
+	const collected = collectModelFormData();
+	if (!collected.ok) {
+		showModelError(collected.error);
+		return;
+	}
+
+	const base = collected.value;
+	const isEditing = modelIdInput.hasAttribute("data-editing");
+	const originalProvider = base.originalProvider;
+	const originalModelId = base.originalModelId;
+	delete base.originalProvider;
+	delete base.originalModelId;
+
+	let models;
+	if (isEditing) {
+		// Editing keeps the single id in the text box, which is also how a model
+		// gets renamed.
+		if (!base.id) {
+			showModelError(t("error.modelIdRequired"));
+			return;
+		}
+		models = [base];
+	} else {
+		const configured = configuredModelIds(provider);
+		const requested = pendingModelIds();
+		const ids = requested.filter((id) => !configured.has(id));
+		if (!ids.length) {
+			showModelError(requested.length ? t("error.allModelsAlreadyConfigured", provider) : t("error.noModelsSelected"));
+			return;
+		}
+
+		// A name typed for a single model is kept. A batch falls back to the default,
+		// because one typed name cannot be shared by several models.
+		const typedName = modelDisplayNameInput.value.normalize("NFKC").trim();
+		models = ids.map((id) => ({
+			...base,
+			id,
+			displayName: ids.length === 1 && typedName ? typedName : defaultDisplayName(id, provider),
+		}));
+	}
+
+	const invalid = modelFormError(models, { isEditing, originalProvider, originalModelId });
+	if (invalid) {
+		showModelError(invalid);
+		return;
+	}
+
+	if (isEditing) {
+		postOperation(
+			{
+				type: "updateModel",
+				model: models[0],
+				originalProvider: originalProvider,
+				originalModelId: originalModelId,
+			},
+			closeModelForm,
+			showModelError
+		);
+		return;
+	}
+
+	postOperation(
+		{ type: "addModels", models },
+		() => {
+			selectedModelIds.clear();
+			closeModelForm();
+		},
+		showModelError
+	);
+}
+
+// Everything that can be wrong with the models the form is about to write.
+// Returns a message to show, or an empty string when the batch is fine. A
+// batch is checked as a whole so that two models in it cannot collide with
+// each other, which a per-model check would miss.
+function modelFormError(models, origin) {
+	const base = models[0];
+	const isEditing = Boolean(origin.isEditing);
+	const originalProvider = (origin.originalProvider || "").toLowerCase();
+	const originalModelId = origin.originalModelId || "";
+
+	// The numeric fields are shared by the whole batch, so they are checked once.
+	// Each message is written out rather than looked up from a table, so the
+	// translation test can still see that the key is used.
+	if (base.context_length !== undefined && (isNaN(base.context_length) || base.context_length <= 0)) {
+		return t("error.contextLengthPositive");
+	}
+	if (base.max_tokens !== undefined && (isNaN(base.max_tokens) || base.max_tokens <= 0)) {
+		return t("error.maxTokensPositive");
+	}
+	if (
+		base.max_completion_tokens !== undefined &&
+		(isNaN(base.max_completion_tokens) || base.max_completion_tokens <= 0)
+	) {
+		return t("error.maxCompletionTokensPositive");
+	}
+	if (base.temperature !== undefined && (isNaN(base.temperature) || base.temperature < 0 || base.temperature > 2)) {
+		return t("error.temperatureRange");
+	}
+	if (base.top_p !== undefined && (isNaN(base.top_p) || base.top_p < 0 || base.top_p > 1)) {
+		return t("error.topPRange");
+	}
+	if (base.delay !== undefined && (isNaN(base.delay) || base.delay < 0)) {
+		return t("error.delayNonNegative");
+	}
+
+	if (base.max_tokens !== undefined && base.max_completion_tokens !== undefined) {
+		return t("error.bothMaxTokens");
+	}
+	if (base.headers && typeof base.headers !== "object") {
+		return t("error.headersJson");
+	}
+	if (base.extra && typeof base.extra !== "object") {
+		return t("error.extraJson");
+	}
+
+	const reserved = models.find((model) => model.id.startsWith("__provider__"));
+	if (reserved) {
+		return t("error.reservedModelIdPrefix");
+	}
+
+	// A model id is unique within its provider. Renaming must not collide with
+	// the record being renamed, so that one is excluded.
+	const isOriginal = (model) =>
+		isEditing && model.owned_by.toLowerCase() === originalProvider && model.id === originalModelId;
+	const takenIds = new Set(
+		state.models
+			.filter((model) => !isOriginal(model))
+			.map((model) => `${model.owned_by.toLowerCase()}\u0000${model.id}`)
+	);
+	const duplicateId = models.find((model) => takenIds.has(`${model.owned_by.toLowerCase()}\u0000${model.id}`));
+	if (duplicateId) {
+		return t("error.duplicateModelId", duplicateId.id, duplicateId.owned_by);
+	}
+
+	// Display names have to be unique across every provider, so a batch cannot
+	// reuse one name for several models either.
+	const takenNames = new Set(
+		state.models
+			.filter((model) => model.providerConfig !== true && !isOriginal(model))
+			.filter((model) => typeof model.displayName === "string")
+			.map((model) => model.displayName.normalize("NFKC").trim().toLowerCase())
+	);
+	const seen = new Set();
+	for (const model of models) {
+		const name = (model.displayName || "").normalize("NFKC").trim().toLowerCase();
+		if (!name) {
+			return t("error.displayNameRequired");
+		}
+		if (takenNames.has(name) || seen.has(name)) {
+			return t("error.duplicateDisplayName", model.displayName);
+		}
+		seen.add(name);
+	}
+
+	return "";
+}
+
+// Report the outcome of a connection test inline, next to the buttons.
+function setTestStatus(state, message) {
+	testConnectionStatus.className = `test-status ${state}`;
+	testConnectionStatus.textContent = message || "";
+}
+
+function testModelConnection() {
+	const provider = modelProviderInput.value.trim();
+	if (!provider) {
+		setTestStatus("error", t("error.providerIdRequired"));
+		return;
+	}
+
+	const collected = collectModelFormData();
+	if (!collected.ok) {
+		setTestStatus("error", collected.error);
+		return;
+	}
+
+	const model = collected.value;
+	setTestStatus("pending", t("modelForm.testPending"));
+	testModelConnectionBtn.disabled = true;
+	vscode.postMessage({
+		type: "testModelConnection",
+		provider,
+		baseUrl: model.baseUrl,
+		apiMode: model.apiMode,
+		headers: model.headers,
+		modelId: model.id,
+	});
+}
+
 // Dropdown visibility functions
 function showDropdown() {
+	// Editing renames one existing model, so there is nothing to pick.
+	if (modelIdInput.hasAttribute("data-editing")) {
+		return;
+	}
 	if (dropdownContent.children.length > 0) {
 		modelIdDropdown.classList.add("show");
 	}
@@ -1571,6 +2301,14 @@ function populateModelForm(model) {
 	modelIdInput.setAttribute("data-original-id", model.id || "");
 
 	modelIdInput.value = model.id || "";
+	// Editing changes one existing model, so the picker is not offered and the
+	// pills are left empty.
+	selectedModelIds.clear();
+	modelIdChips.replaceChildren();
+	modelIdField.classList.add("is-editing");
+	modelIdFilter.value = "";
+	modelIdFilterCount.textContent = "";
+	modelIdFilterCount.hidden = true;
 
 	// Ensure the provider is in the dropdown options
 	const currentProvider = model.owned_by || "";
@@ -1629,16 +2367,16 @@ function populateModelForm(model) {
 	modelExtraInput.value = model.extra ? JSON.stringify(model.extra, null, 2) : "";
 	// Mark that we're in editing mode by setting an attribute
 	modelIdInput.setAttribute("data-editing", "true");
+	updateSaveButtonLabel();
+	updateDisplayNameAvailability();
 }
 
 // Initialize dropdown event listeners
 function initDropdownEvents() {
 	// Show dropdown on focus
-	modelIdInput.addEventListener("focus", () => {
-		if (dropdownContent.children.length > 0) {
-			showDropdown();
-		}
-	});
+	modelIdInput.addEventListener("focus", showDropdown);
+
+	modelIdFilter.addEventListener("input", applyModelFilter);
 
 	// Hide dropdown when clicking outside
 	document.addEventListener("click", (event) => {
@@ -1655,38 +2393,73 @@ function initDropdownEvents() {
 			event.preventDefault();
 			const options = dropdownContent.querySelectorAll(".dropdown-option");
 			if (options.length > 0) {
-				const firstOption = options[0];
-				firstOption.focus();
-				firstOption.classList.add("selected");
+				// Labels are not focusable, so target the checkbox they wrap.
+				options[0].querySelector("input")?.focus();
 			}
 		}
 	});
 
-	// Allow user to type freely
+	// Typing is a model id, not a filter, so it no longer disturbs the pills.
+	// Enter promotes it to a pill so the field shows what will be created.
 	modelIdInput.addEventListener("input", () => {
-		// Clear selection when user types
-		dropdownContent.querySelectorAll(".dropdown-option").forEach((opt) => {
-			opt.classList.remove("selected");
-		});
+		updateSaveButtonLabel();
+		updateDisplayNameAvailability();
+	});
 
-		// Filter options based on input
-		const searchTerm = modelIdInput.value.toLowerCase();
-		const options = dropdownContent.querySelectorAll(".dropdown-option");
-
-		options.forEach((option) => {
-			const modelId = option.dataset.modelId.toLowerCase();
-			if (modelId.includes(searchTerm)) {
-				option.style.display = "block";
-			} else {
-				option.style.display = "none";
-			}
-		});
-
-		// Update header with filtered count
-		const visibleCount = Array.from(options).filter((opt) => opt.style.display !== "none").length;
-		dropdownHeader.textContent = t("models.selectMatching", visibleCount);
+	modelIdInput.addEventListener("keydown", (event) => {
+		if (event.key !== "Enter") {
+			return;
+		}
+		const typed = modelIdInput.value.normalize("NFKC").trim();
+		if (!typed) {
+			return;
+		}
+		event.preventDefault();
+		selectedModelIds.add(typed);
+		modelIdInput.value = "";
+		const box = dropdownContent.querySelector(`.dropdown-option input[data-model-id="${CSS.escape(typed)}"]`);
+		if (box) {
+			box.checked = true;
+		}
+		renderModelIdChips();
+		updateSelectionSummary();
 	});
 }
+
+// Batch controls: select all, clear, and add every ticked model.
+function initBatchAddEvents() {
+	modelIdSelectAll.addEventListener("change", () => {
+		const checked = modelIdSelectAll.checked;
+		dropdownContent.querySelectorAll(".dropdown-option input[type=checkbox]").forEach((box) => {
+			if (box.closest(".dropdown-option").style.display === "none" || box.disabled) {
+				return;
+			}
+			box.checked = checked;
+			if (checked) {
+				selectedModelIds.add(box.dataset.modelId);
+			} else {
+				selectedModelIds.delete(box.dataset.modelId);
+			}
+		});
+		renderModelIdChips();
+		updateSelectionSummary();
+	});
+
+	modelIdClearSelection.addEventListener("click", () => {
+		dropdownContent.querySelectorAll(".dropdown-option input[type=checkbox]").forEach((box) => {
+			box.checked = false;
+		});
+		selectedModelIds.clear();
+		renderModelIdChips();
+		updateSelectionSummary();
+	});
+
+	testModelConnectionBtn.addEventListener("click", testModelConnection);
+}
+
+initBatchAddEvents();
+initBatchEditEvents();
+initModelModalEvents();
 
 // Initialize dropdown events
 initDropdownEvents();

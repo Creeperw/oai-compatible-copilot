@@ -21,6 +21,7 @@ import {
 	translate,
 } from "../i18n";
 import { formatBalanceLabel } from "../balance/format";
+import { validateModelPatch } from "../modelConfiguration";
 import {
 	assertValidModelCollection,
 	canonicalizeProvider,
@@ -162,7 +163,22 @@ type IncomingMessage =
 	| { type: "refreshBalance"; provider: string }
 	| { type: "testBalance"; provider: string; balance: ProviderBalanceConfig }
 	| { type: "addModel"; model: HFModelItem }
+	| { type: "addModels"; models: HFModelItem[] }
+	| {
+			type: "testModelConnection";
+			provider: string;
+			baseUrl?: string;
+			apiMode?: HFApiMode;
+			headers?: Record<string, string>;
+			modelId?: string;
+	  }
 	| { type: "updateModel"; model: HFModelItem; originalProvider: string; originalModelId: string }
+	| {
+			type: "updateModels";
+			targets: Array<{ provider: string; modelId: string }>;
+			patch: Record<string, unknown>;
+			clear: string[];
+	  }
 	| { type: "deleteModel"; provider: string; modelId: string }
 	| { type: "clearProviderApiKey"; provider: string }
 	| { type: "setLanguage"; preference: LanguagePreference }
@@ -174,6 +190,14 @@ type OutgoingMessage =
 	| { type: "init"; payload: InitPayload }
 	| { type: "modelsFetched"; models: HFModelItem[] }
 	| { type: "modelsFetchError"; error: string }
+	| {
+			type: "testConnectionResult";
+			ok: boolean;
+			count?: number;
+			models?: string[];
+			modelId?: string;
+			error?: string;
+	  }
 	| ({ type: "balanceResult"; test: boolean; requestId?: string } & BalanceState)
 	| { type: "confirmResponse"; id: string; confirmed: boolean }
 	| { type: "operationResult"; requestId: string; success: boolean; error?: string };
@@ -187,7 +211,9 @@ const MUTATING_MESSAGE_TYPES = new Set<IncomingMessage["type"]>([
 	"deleteProvider",
 	"clearProviderApiKey",
 	"addModel",
+	"addModels",
 	"updateModel",
+	"updateModels",
 	"deleteModel",
 	"importConfig",
 ]);
@@ -310,7 +336,7 @@ export class ConfigViewPanel {
 					const models = getGlobalUserModels(vscode.workspace.getConfiguration());
 					const providerConfiguration = getProviderConfiguration(models, provider);
 					if (!providerConfiguration?.baseUrl) {
-						throw new Error(`Base URL is not configured for provider "${provider}".`);
+						throw new Error(t("error.baseUrlRequired", provider));
 					}
 					const apiKey = (await this.secrets.get(`oaicopilot.apiKey.${provider}`)) || "";
 					const { models: fetchedModels } = await fetchModels(
@@ -367,8 +393,17 @@ export class ConfigViewPanel {
 			case "addModel":
 				await this.addModel(message.model);
 				break;
+			case "addModels":
+				await this.addModels(message.models);
+				break;
+			case "testModelConnection":
+				await this.testModelConnection(message);
+				break;
 			case "updateModel":
 				await this.updateModel(message.model, message.originalProvider, message.originalModelId);
+				break;
+			case "updateModels":
+				await this.updateModels(message.targets, message.patch, message.clear);
 				break;
 			case "requestConfirm":
 				await this.handleConfirmRequest(message.id, message.message, message.action);
@@ -406,11 +441,13 @@ export class ConfigViewPanel {
 			confirmed = await vscode.window.showInformationMessage(message, { modal: true }, t("common.yes"), t("common.no"));
 		}
 
-		// Send response back to webview
+		// Send response back to webview. The buttons are labelled with t(...), so the
+		// value that comes back is already localised: comparing it against a literal
+		// only works in the language that literal happens to be written in.
 		this.panel.webview.postMessage({
 			type: "confirmResponse",
 			id: id,
-			confirmed: action === "showInfo" ? true : confirmed === "Yes",
+			confirmed: action === "showInfo" ? true : confirmed === t("common.yes"),
 		} as OutgoingMessage);
 	}
 
@@ -809,6 +846,78 @@ export class ConfigViewPanel {
 		await this.sendInit();
 	}
 
+	/**
+	 * Add several models in one write.
+	 *
+	 * The whole batch is validated before anything is stored, so a rejected entry
+	 * cannot leave the user with half of a selection applied.
+	 */
+	private async addModels(incoming: HFModelItem[]) {
+		if (!incoming.length) {
+			throw new Error(t("error.noModelsSelected"));
+		}
+		const config = vscode.workspace.getConfiguration();
+		const models = getGlobalUserModels(config);
+		const normalized = incoming.map(normalizeConfiguredModel);
+		const updatedModels = [...models, ...normalized];
+		assertValidModelCollection(updatedModels);
+
+		await config.update("oaicopilot.models", updatedModels, vscode.ConfigurationTarget.Global);
+		const provider = canonicalizeProvider(normalized[0].owned_by);
+		vscode.window.showInformationMessage(t("host.modelsAdded", normalized.length, provider));
+		await this.sendInit();
+	}
+
+	/**
+	 * Check that a provider answers and that the credentials are accepted.
+	 *
+	 * The settings come from the form rather than from storage, so a connection
+	 * can be verified before it is saved.
+	 */
+	private async testModelConnection(message: {
+		provider: string;
+		baseUrl?: string;
+		apiMode?: HFApiMode;
+		headers?: Record<string, string>;
+		modelId?: string;
+	}) {
+		try {
+			const provider = canonicalizeProvider(message.provider);
+			if (!provider) {
+				throw new Error(t("error.providerIdRequired"));
+			}
+			const configured = getGlobalUserModels(vscode.workspace.getConfiguration());
+			const effective = resolveModelConnection(configured, {
+				id: message.modelId ?? "",
+				owned_by: provider,
+				displayName: "",
+				baseUrl: message.baseUrl,
+				apiMode: message.apiMode,
+				headers: message.headers,
+			});
+			if (!effective.baseUrl) {
+				throw new Error(t("error.baseUrlRequired", provider));
+			}
+			const apiKey = (await this.secrets.get(`oaicopilot.apiKey.${provider}`)) || "";
+			const { models: fetched } = await fetchModels(effective.baseUrl, apiKey, effective.apiMode, effective.headers);
+			const ids = fetched.map((model) => model.id);
+			this.panel.webview.postMessage({
+				type: "testConnectionResult",
+				ok: true,
+				count: ids.length,
+				models: ids,
+				modelId: message.modelId,
+			} satisfies OutgoingMessage);
+		} catch (err) {
+			const errorMessage = err instanceof Error ? err.message : String(err);
+			this.panel.webview.postMessage({
+				type: "testConnectionResult",
+				ok: false,
+				error: errorMessage,
+			} satisfies OutgoingMessage);
+		}
+	}
+
 	private async updateModel(model: HFModelItem, originalProvider: string, originalModelId: string) {
 		const config = vscode.workspace.getConfiguration();
 		const models = getGlobalUserModels(config);
@@ -830,6 +939,57 @@ export class ConfigViewPanel {
 
 		await config.update("oaicopilot.models", updatedModels, vscode.ConfigurationTarget.Global);
 		vscode.window.showInformationMessage(t("host.modelUpdated", normalizedModel.owned_by, normalizedModel.id));
+		// Send refresh signal to frontend
+		await this.sendInit();
+	}
+
+	/**
+	 * Apply one partial change to several models at once.
+	 *
+	 * A field listed in `clear` is removed rather than set, which is how the batch
+	 * editor undoes a setting: an empty input cannot be told apart from writing an
+	 * empty value once it reaches the configuration.
+	 */
+	private async updateModels(
+		targets: Array<{ provider: string; modelId: string }>,
+		patch: Record<string, unknown>,
+		clear: string[]
+	) {
+		if (!Array.isArray(targets) || !targets.length) {
+			throw new Error(t("error.noModelsSelected"));
+		}
+		const validatedPatch = validateModelPatch(patch);
+		const removable = (Array.isArray(clear) ? clear : []).filter((key) => typeof key === "string");
+		for (const key of removable) {
+			if (key in validatedPatch) {
+				throw new Error(`${key} cannot be set and cleared in the same update.`);
+			}
+		}
+
+		const config = vscode.workspace.getConfiguration();
+		const models = getGlobalUserModels(config);
+		const identities = new Set(targets.map((target) => modelIdentityKeyFromParts(target.provider, target.modelId)));
+
+		let touched = 0;
+		const updatedModels = models.map((model) => {
+			if (!identities.has(getModelIdentityKey(model))) {
+				return model;
+			}
+			touched += 1;
+			const next: Record<string, unknown> = { ...model, ...validatedPatch };
+			for (const key of removable) {
+				delete next[key];
+			}
+			return normalizeConfiguredModel(next as unknown as HFModelItem);
+		});
+
+		if (!touched) {
+			throw new Error(t("error.modelsNotFound"));
+		}
+		assertValidModelCollection(updatedModels);
+
+		await config.update("oaicopilot.models", updatedModels, vscode.ConfigurationTarget.Global);
+		vscode.window.showInformationMessage(t("host.modelsUpdated", touched));
 		// Send refresh signal to frontend
 		await this.sendInit();
 	}

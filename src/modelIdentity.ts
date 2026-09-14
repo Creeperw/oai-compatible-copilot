@@ -230,7 +230,7 @@ export function normalizeConfiguredModel(model: HFModelItem): HFModelItem {
 }
 
 export function defaultDisplayName(model: Pick<HFModelItem, "id" | "owned_by">): string {
-	return `${canonicalizeProvider(model.owned_by)} / ${model.id.trim()}`;
+	return `${model.id.trim()} / ${canonicalizeProvider(model.owned_by)}`;
 }
 
 export function createProviderConfiguration(

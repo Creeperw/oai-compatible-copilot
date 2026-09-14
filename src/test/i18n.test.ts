@@ -25,6 +25,33 @@ function keysIn(source: string, pattern: RegExp): string[] {
 	return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
+/** Every TypeScript file below `dir`, so a rule can be checked against the sources. */
+function walk(dir: string): string[] {
+	return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+		const full = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			return walk(full);
+		}
+		return entry.name.endsWith(".ts") ? [full] : [];
+	});
+}
+
+/** The `...(...)` call starting at `start`, up to its balanced closing parenthesis. */
+function callTextAt(source: string, start: number): string {
+	let depth = 0;
+	for (let index = start; index < source.length; index++) {
+		if (source[index] === "(") {
+			depth++;
+		} else if (source[index] === ")") {
+			depth--;
+			if (depth === 0) {
+				return source.slice(start, index + 1);
+			}
+		}
+	}
+	return source.slice(start);
+}
+
 suite("i18n locale resolution", () => {
 	test("follows the VS Code display language by default", () => {
 		assert.strictEqual(resolveLocale("auto", "zh-cn"), "zh-CN");
@@ -168,6 +195,36 @@ suite("configuration UI translations", () => {
 				assert.ok(key in MESSAGES["zh-CN"], `missing ${key}`);
 			}
 		}
+	});
+
+	test("a dialog result is never compared against a hardcoded label", () => {
+		// A confirmation button is labelled with t(...), so what the API returns is a
+		// translated string. Comparing it with a literal is correct only in the
+		// language the literal was written in: `confirmed === "Yes"` silently turned
+		// every Chinese confirmation into a cancellation, and the only visible symptom
+		// was that deleting a model did nothing.
+		//
+		// A literal is legitimate when it is one of the labels of the very dialog the
+		// value came from, because then the two always agree.
+		const offenders: string[] = [];
+		const assignment = /(?:const|let)\s+(\w+)\s*=\s*await\s+vscode\.window\.show(?:Information|Warning|Error)Message/g;
+		for (const file of walk(path.join(ROOT, "src"))) {
+			if (file.includes(`${path.sep}test${path.sep}`)) {
+				continue;
+			}
+			const source = fs.readFileSync(file, "utf8");
+			for (const match of source.matchAll(assignment)) {
+				const variable = match[1];
+				const labels = new Set(keysIn(callTextAt(source, match.index), /"([^"]*)"/g));
+				const compared = new RegExp(`\\b${variable}\\s*[!=]==?\\s*"([^"]*)"`, "g");
+				for (const [, literal] of source.matchAll(compared)) {
+					if (!labels.has(literal)) {
+						offenders.push(`${path.relative(ROOT, file)}: ${variable} compared with "${literal}"`);
+					}
+				}
+			}
+		}
+		assert.deepStrictEqual(offenders, [], "a localised dialog result is compared against a literal");
 	});
 
 	test("the markup keeps its English text as the default", () => {

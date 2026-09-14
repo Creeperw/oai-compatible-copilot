@@ -252,7 +252,7 @@ tr:hover {
 	white-space: nowrap;
 }
 
-button:not(.secondary):not(.danger) {
+button:not(.secondary):not(.danger):not(.link-button) {
 	background: var(--vscode-button-background);
 	color: var(--vscode-button-foreground);
 	border: 1px solid var(--vscode-button-border, transparent);
@@ -296,12 +296,23 @@ button:not(.secondary):not(.danger) {
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 	margin-top: 2px;
 	display: none;
-	max-height: 300px;
+	/* The cap has to cover the header and the footer too. With a flat 300px the
+	   header plus a full-length list already came to more than that, and
+	   overflow:hidden quietly cut the footer off the bottom. */
+	max-height: min(60vh, 380px);
 	overflow: hidden;
 }
 
+/* A flex column keeps the header and the footer at their natural height and
+   hands whatever is left to the list, so the footer cannot be pushed out. */
 .model-input-dropdown.show {
-	display: block;
+	display: flex;
+	flex-direction: column;
+}
+
+.dropdown-header,
+.dropdown-footer {
+	flex: 0 0 auto;
 }
 
 .dropdown-header {
@@ -313,7 +324,10 @@ button:not(.secondary):not(.danger) {
 }
 
 .dropdown-content {
-	max-height: 250px;
+	/* min-height:0 is what lets a scrollable flex child shrink below its own
+	   content height instead of stretching the box. */
+	flex: 1 1 auto;
+	min-height: 0;
 	overflow-y: auto;
 }
 
@@ -325,11 +339,6 @@ button:not(.secondary):not(.danger) {
 
 .dropdown-option:hover {
 	background: var(--vscode-list-hoverBackground);
-}
-
-.dropdown-option.selected {
-	background: var(--vscode-list-activeSelectionBackground);
-	color: var(--vscode-list-activeSelectionForeground);
 }
 
 .dropdown-option:not(:last-child) {
@@ -364,6 +373,8 @@ button:not(.secondary):not(.danger) {
 	color: var(--vscode-inputValidation-errorForeground);
 	font-size: 13px;
 	line-height: 1.4;
+	/* A rejected batch lists one problem per line. */
+	white-space: pre-line;
 }
 
 .error-message:empty {
@@ -621,4 +632,564 @@ button:disabled {
 .language-select {
 	width: auto;
 	min-width: 140px;
+}
+
+/* ------------------------------------------------------- model form grid */
+
+/* The form used to be a stack of ragged flex rows, which made 22 fields look
+   like one undifferentiated wall. Fields now sit in titled groups on a
+   responsive grid, and the description flexes so every input in a row lines up
+   on the same baseline. */
+.form-group {
+	margin-bottom: 20px;
+}
+
+.form-group:last-child {
+	margin-bottom: 0;
+}
+
+.form-group-title {
+	margin: 0 0 12px;
+	padding-bottom: 6px;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--vscode-descriptionForeground);
+	border-bottom: 1px solid var(--vscode-editorWidget-border);
+}
+
+.form-group-hint {
+	margin: -6px 0 12px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.form-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 16px 18px;
+	align-items: stretch;
+}
+
+.form-grid-wide {
+	grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.form-grid .field {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	margin-bottom: 0;
+}
+
+.form-grid .field-description {
+	flex: 1 1 auto;
+	padding: 0 0 6px;
+	margin-bottom: 0;
+}
+
+.form-grid .field > input,
+.form-grid .field > select,
+.form-grid .field > textarea,
+.form-grid .field > .input-with-dropdown {
+	margin-top: auto;
+}
+
+.form-grid textarea {
+	resize: vertical;
+}
+
+/* -------------------------------------------------- advanced settings door */
+
+.advanced-settings button::before {
+	display: inline-block;
+	width: 12px;
+	content: "\25B8";
+	transition: transform 0.12s ease;
+}
+
+.advanced-settings button[aria-expanded="true"]::before {
+	content: "\25BE";
+}
+
+/* --------------------------------------------------------- test connection */
+
+.actions {
+	align-items: center;
+}
+
+.actions .test-status {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: 12px;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.test-status.success {
+	color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+}
+
+.test-status.error {
+	color: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
+}
+
+.test-status.pending {
+	color: var(--vscode-descriptionForeground);
+}
+
+/* --------------------------------------------------- multi-select dropdown */
+
+.dropdown-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.dropdown-select-all {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 0;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.dropdown-select-all input {
+	margin: 0;
+	cursor: pointer;
+}
+
+.dropdown-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--vscode-editorWidget-border);
+	background: rgba(0, 0, 0, 0.03);
+}
+
+.dropdown-count {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.dropdown-footer button {
+	margin-right: 0;
+	padding: 5px 12px;
+	font-size: 12px;
+}
+
+.dropdown-option {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.dropdown-option input[type="checkbox"] {
+	margin: 0;
+	flex: 0 0 auto;
+	cursor: pointer;
+}
+
+.dropdown-option .dropdown-option-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* A quiet control that lives inside a header row. The filled-button styling
+   every other button gets would drown out the list it belongs to, and the
+   lift-on-hover effect makes a text control read as a primary action. */
+button.link-button {
+	flex: 0 0 auto;
+	margin-right: 0;
+	padding: 3px 10px;
+	border: 1px solid var(--vscode-editorWidget-border);
+	border-radius: 5px;
+	background: transparent;
+	color: var(--vscode-foreground);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.6;
+	white-space: nowrap;
+	transition: background-color 0.1s ease;
+}
+
+/* A quiet control, not a primary action: it keeps its outline so it still reads
+   as clickable, but skips the lift-and-shadow hover that looks like a glitch on
+   something this small. */
+button.link-button:hover {
+	background: var(--vscode-list-hoverBackground);
+	transform: none;
+	box-shadow: none;
+}
+
+button.link-button:active {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+	transform: none;
+	box-shadow: none;
+}
+
+button.link-button:hover,
+button.link-button:focus-visible {
+	background: var(--vscode-list-hoverBackground);
+	transform: none;
+	box-shadow: none;
+}
+
+button.link-button:active {
+	transform: none;
+	box-shadow: none;
+}
+
+/* --------------------------------------------------------- table polish */
+
+/* A tall model list used to scroll the whole panel, which meant losing the
+   column headings. Containing the scroll keeps the header and the provider
+   heading in view while the rows move under them. */
+.table-container {
+	max-height: 65vh;
+	overflow: auto;
+}
+
+.table-container thead th {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	background: var(--vscode-editor-background);
+}
+
+/* Alternating rows: the tables were previously a single flat block of text. */
+tbody tr.model-row.alt {
+	background: var(--vscode-list-hoverBackground);
+}
+
+tbody tr.model-row:hover {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+tbody tr.model-row:hover .muted {
+	color: inherit;
+}
+
+/* Provider heading that introduces a group of model rows. */
+tr.model-group-row {
+	cursor: pointer;
+	user-select: none;
+}
+
+tr.model-group-row:hover .model-group-cell {
+	color: var(--vscode-foreground);
+}
+
+tr.model-group-row td.model-group-cell {
+	padding: 8px 10px;
+	background: var(--vscode-editorWidget-background, rgba(0, 0, 0, 0.04));
+	border-top: 1px solid var(--vscode-editorWidget-border);
+	border-bottom: 1px solid var(--vscode-editorWidget-border);
+	font-weight: 600;
+	color: var(--vscode-descriptionForeground);
+}
+
+/* The flex container lives inside the cell so the cell stays a table cell
+   and keeps its colspan. */
+.model-group-heading {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.model-group-heading::before {
+	content: "\25BE";
+	font-size: 10px;
+	transition: transform 0.12s ease;
+}
+
+tr.model-group-row.collapsed .model-group-heading::before {
+	content: "\25B8";
+}
+
+.model-group-name {
+	color: var(--vscode-foreground);
+}
+
+.model-group-count {
+	white-space: nowrap;
+	padding: 1px 7px;
+	border: 1px solid var(--vscode-editorWidget-border);
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 400;
+	color: var(--vscode-descriptionForeground);
+}
+
+/* Compact row actions: two full-width buttons per row made the table shout. */
+td.action-buttons {
+	white-space: nowrap;
+}
+
+td.action-buttons button {
+	margin-right: 6px;
+	padding: 3px 9px;
+	border-radius: 6px;
+	font-size: 11px;
+	font-weight: 400;
+}
+
+td.action-buttons button:last-child {
+	margin-right: 0;
+}
+
+button.danger {
+	color: var(--vscode-errorForeground);
+	border-color: var(--vscode-editorWidget-border);
+	background: transparent;
+}
+
+button.danger:hover {
+	background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
+}
+
+/* A model that already exists for the provider. */
+.dropdown-option.already-configured {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.dropdown-option.already-configured:hover {
+	background: transparent;
+}
+
+/* Inline Display Name editing: looks like plain text until you reach for it. */
+input.model-cell-input {
+	width: 100%;
+	min-width: 130px;
+	margin-bottom: 0;
+	padding: 3px 6px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+}
+
+input.model-cell-input:hover {
+	border-color: var(--vscode-editorWidget-border);
+}
+
+input.model-cell-input:focus {
+	border-color: var(--vscode-focusBorder);
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	outline: none;
+}
+
+/* -------------------------------------------------- batch editor and selection */
+
+.selection-count {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin-right: 4px;
+}
+
+/* The tick box column stays narrow and out of the way of the model name. */
+.select-cell {
+	width: 34px;
+	text-align: center;
+}
+
+.select-cell input[type="checkbox"] {
+	margin: 0;
+	cursor: pointer;
+}
+
+/* A select in a cell reads as text until it is used, so a wide table does not turn
+   into a wall of controls. */
+select.model-cell-select {
+	width: 100%;
+	min-width: 92px;
+	margin-bottom: 0;
+	padding: 3px 6px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+select.model-cell-select:hover {
+	border-color: var(--vscode-editorWidget-border);
+}
+
+select.model-cell-select:focus {
+	border-color: var(--vscode-focusBorder);
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	outline: none;
+}
+
+.batch-edit-panel {
+	margin: 0 0 14px;
+	padding: 14px 16px;
+	border: 1px solid var(--vscode-editorWidget-border);
+	border-left: 3px solid var(--vscode-focusBorder);
+	border-radius: 8px;
+	background: var(--vscode-editorWidget-background, rgba(0, 0, 0, 0.06));
+}
+
+.batch-edit-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.batch-edit-header h3 {
+	margin: 0;
+	font-size: 13px;
+}
+
+.batch-edit-panel .field-description {
+	margin: 4px 0 12px;
+}
+
+.batch-field {
+	min-width: 0;
+}
+
+/* The tick box and the field name share a line, and the input sits underneath so a
+   long label cannot push the input out of the grid cell. */
+.batch-field-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.batch-field-label input[type="checkbox"] {
+	margin: 0;
+	flex: 0 0 auto;
+	cursor: pointer;
+}
+
+.batch-field .batch-field-value:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.batch-edit-panel .actions {
+	margin-top: 14px;
+}
+
+/* ------------------------------------------------- model form modal */
+
+/* Five groups of fields in two columns need more room than the balance panel. */
+.model-modal-panel {
+	width: min(1000px, 100%);
+}
+
+/* Model ID is a chip field: every id already chosen is a removable pill and
+   the text box is the tail of the same line, so the dropdown below stays
+   aligned with the field instead of with the pills. */
+.model-id-field {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	min-height: 32px;
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-editorWidget-border);
+	border-radius: 4px;
+	background: var(--vscode-editor-background);
+	box-sizing: border-box;
+}
+
+.model-id-field:focus-within {
+	border-color: var(--vscode-focusBorder);
+	outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* Lets the pills take part in the field's own flex layout, so they wrap
+   together with the input rather than inside a nested box. */
+.model-id-chips {
+	display: contents;
+}
+
+.model-id-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	max-width: 100%;
+	padding: 2px 4px 2px 8px;
+	border: 1px solid var(--vscode-editorWidget-border);
+	border-radius: 999px;
+	background: var(--vscode-badge-background, rgba(127, 127, 127, 0.18));
+	color: var(--vscode-badge-foreground, var(--vscode-foreground));
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+.model-id-chip-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* An id that came from the list cannot be renamed, only removed. */
+.model-id-chip.locked .model-id-chip-label {
+	color: var(--vscode-descriptionForeground);
+}
+
+.model-id-chip-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: inherit;
+	font-size: 11px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.model-id-chip-remove:hover {
+	background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.3));
+}
+
+/* The input is the tail of the chip box, so it must not draw its own frame. */
+.model-id-input {
+	flex: 1 1 120px;
+	min-width: 120px;
+	padding: 2px 0;
+	border: none;
+	background: transparent;
+	color: var(--vscode-foreground);
+	font-family: inherit;
+	font-size: inherit;
+}
+
+.model-id-input:focus {
+	outline: none;
+}
+
+/* Shown while more than one model is being added, when a single typed display
+   name cannot apply to all of them. */
+.batch-hint {
+	color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
 }

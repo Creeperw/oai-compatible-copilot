@@ -62,6 +62,7 @@ suite("modelIdentity", () => {
 	});
 
 	test("migrates legacy global Base URL and creates stable unique Display Names", () => {
+		// The generated name leads with the Model ID and ends with the provider.
 		const migrated = migrateLegacyModelMetadata(
 			[
 				{ id: "gpt-5", owned_by: "OpenAI" },
@@ -78,13 +79,13 @@ suite("modelIdentity", () => {
 				{
 					owned_by: "openai",
 					id: "gpt-5",
-					displayName: "openai / gpt-5",
+					displayName: "gpt-5 / openai",
 					baseUrl: undefined,
 				},
 				{
 					owned_by: "sub2api",
 					id: "gpt-5",
-					displayName: "sub2api / gpt-5",
+					displayName: "gpt-5 / sub2api",
 					baseUrl: undefined,
 				},
 			]

@@ -28,7 +28,38 @@ English | [简体中文](README.zh-CN.md)
 - **Provider balance**: Query and display the remaining credit of each provider, with built-in presets for DeepSeek, SiliconFlow, OpenRouter, StepFun, Novita AI, New API relays, and the Kimi, Zhipu GLM, MiniMax, and OpenCode Go coding plans
 - **Git integration**: Generate commit messages directly from source control
 - **Import/export**: Easily share and backup configurations
+- **Bulk model setup**: Add many models in one dialog from the provider's live model list, with a connection test that checks the URL, the key, and the model id before you save
 - **Tools optimization**: Optimize agent `read_file` tool handling, avoid to read small chunks for large file.
+
+### Model form
+
+Adding a model opens a dialog instead of one long list of fields:
+
+- **Basic Information** — provider, Model ID, Display Name, Config ID, API mode, Base URL.
+- **Capabilities & Limits** — context length, max tokens, max completion tokens, vision, family.
+- **Thinking & Reasoning** — thinking type, enable thinking, reasoning effort, thinking budget, include reasoning.
+- **Sampling** — temperature, Top P, delay.
+- **Advanced Settings** — Top K, Min P, the three penalties, the OpenRouter reasoning block, and the raw
+  headers/extra JSON.
+
+**Model ID** accepts any number of ids. Ticking rows in the dropdown turns them into removable chips, and
+typing an id and pressing Enter does the same, so adding a single model is still just "type the id, press
+Save". A search box narrows a long list, and **Select all** applies only to what the search left visible.
+Models that are already configured for the provider are dimmed and cannot be ticked. Every id in the field
+is created from the same form values, and the one save button writes them all: it reads **Add 3 Models**
+when several are pending, and **Save Changes** while editing. Display Name is disabled when several models
+are pending, because each of them gets its own default name. **Test Connection** reports how many models
+the endpoint returned, and warns when the Model ID you typed is not among them.
+
+The model table is grouped by provider with a collapsible heading, and the headings stay visible while you
+scroll. Two columns are edited in place: click a **Display Name** or **Reasoning Effort** cell, change it,
+then press Enter to save or Escape to cancel.
+
+To change several models at once, tick them in the first column and press **Batch Settings**. Only the
+fields you tick are written, and a ticked field left empty is cleared; everything else on those models
+stays as it was. That is how you give a group of models the same default reasoning effort without touching
+their individual temperature or delay. A batch add ignores a typed Display Name and gives every model its
+own default.
 
 ## Requirements
 - VS Code 1.120.0 or higher.

@@ -79,3 +79,55 @@ export function getConfiguredReasoningEffort(
 export function isReasoningEffortValue(value: unknown): value is ReasoningEffortPickerValue {
 	return typeof value === "string" && REASONING_EFFORT_VALUES.includes(value as ReasoningEffortPickerValue);
 }
+
+/** Numeric model fields the batch editor is allowed to write. */
+const BATCH_NUMBER_FIELDS = [
+	"context_length",
+	"max_tokens",
+	"max_completion_tokens",
+	"temperature",
+	"top_p",
+	"top_k",
+	"min_p",
+	"frequency_penalty",
+	"presence_penalty",
+	"repetition_penalty",
+	"thinking_budget",
+	"delay",
+];
+
+/** Boolean model fields the batch editor is allowed to write. */
+const BATCH_BOOLEAN_FIELDS = ["vision", "enable_thinking"];
+
+/**
+ * Accept only the fields a bulk edit is allowed to write.
+ *
+ * The panel sends a partial model, so without this an arbitrary key could be written
+ * into a model record and then handed to the provider on every request.
+ */
+export function validateModelPatch(patch: unknown): Record<string, unknown> {
+	if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+		throw new Error("A bulk update needs a patch object.");
+	}
+
+	const validated: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+		if (key === "reasoning_effort") {
+			if (!isReasoningEffortValue(value)) {
+				throw new Error(`Unsupported reasoning effort: ${String(value)}`);
+			}
+		} else if (BATCH_BOOLEAN_FIELDS.includes(key)) {
+			if (typeof value !== "boolean") {
+				throw new Error(`${key} must be true or false.`);
+			}
+		} else if (BATCH_NUMBER_FIELDS.includes(key)) {
+			if (typeof value !== "number" || !Number.isFinite(value)) {
+				throw new Error(`${key} must be a finite number.`);
+			}
+		} else {
+			throw new Error(`${key} cannot be set in bulk.`);
+		}
+		validated[key] = value;
+	}
+	return validated;
+}

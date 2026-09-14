@@ -2,6 +2,47 @@
 
 > This project is a fork of [OAI Compatible Provider for Copilot](https://github.com/JohnnyZ93/oai-compatible-copilot), published as **PolyLLM** (`creeperw.polyllm`). Entries below 0.4.3 come from the upstream project.
 
+## 0.5.0
+
+- Feat: The model form is a **dialog** instead of a block wedged under the table.
+  The table stays the only thing on the page, and the form opens over it with its
+  actions pinned to the bottom.
+- Feat: **Model ID takes several values.** Ticking a model in the picker turns it
+  into a removable chip in the field, and anything typed counts as one more id, so
+  adding a single model is still "open the form, type an id, save".
+- Feat: **One save button for the whole form.** It was previously possible to
+  press **Save Model** with models ticked in the picker and have them silently
+  dropped, because that button only read the text box. The picker no longer has a
+  submit button of its own; the button at the bottom of the form is the only way
+  to create models and says what it will do — **Save Model**, **Add 3 Models**, or
+  **Save Changes** when editing.
+- Feat: The picker has its own **search box**, so the text box in the Model ID
+  field is never ambiguous between a filter and a value. **Select all** applies to
+  the filtered list, which is how a slice of a large catalogue is added at once.
+- Feat: Display Name is switched off with an explanation while several models are
+  being added, instead of being quietly ignored. Each model then gets its own
+  `Model ID / Provider ID` default.
+- Fix: Provider headings in the model table were squeezed into the width of the
+  first column and their model count wrapped onto three lines. The heading cell had
+  been turned into a flex container, and a table cell that stops being a table cell
+  is replaced by an anonymous one that does not inherit `colspan`.
+
+## 0.4.6
+
+- Fix: **Add Selected** disappeared from the bottom of the model picker once the provider returned a long model list. The dropdown capped its own height at 300px and hid the overflow, but the header plus a full-length list already came to more than that, so the footer was cut off the bottom. The dropdown is now a flex column: the header and the footer keep their height and the list scrolls in between.
+- Fix: **Clear** in the model picker lost its button outline. A restyle meant to quieten the hover effect went too far and left it as bare text, which made it look as though the button had been removed.
+- Fix: Errors raised while working in the model list are shown next to the list. They used to be written to the model form's own error slot, which is hidden while the form is closed.
+- Feat: Display Name is editable directly in the model list. Type the new name in the cell and press Enter to save, Escape to cancel. This is what makes bulk add practical: the generated `Model ID / Provider ID` names are a starting point rather than something to be replaced one form at a time.
+
+- Feat: Adding a model now opens a grouped form — **Basic Information**, **Capabilities & Limits**, **Thinking & Reasoning** and **Sampling** — instead of one undifferentiated wall of 22 fields, and the grid keeps every input in a row on the same baseline.
+- Feat: **Advanced Settings** is regrouped into **Sampling Overrides**, the OpenRouter reasoning block and **Custom Request**, so the rarely used knobs are no longer mixed in with the common ones.
+- Feat: New models start from practical defaults: context length `256000`, max output `32768`, thinking enabled, and reasoning effort `High`. The same defaults apply when the extension has to fall back to its own values at runtime.
+- Feat: **Bulk model setup**. The Model ID dropdown is multi-select, so the form's settings are entered once and then applied to any number of models with **Add Selected**. Models that are already configured for the provider are dimmed and cannot be ticked. Each **Add Selected** is a separate batch, so a second batch can be given a different configuration.
+- Feat: Display Name is optional and defaults to `Model ID / Provider ID`, which is what makes bulk add practical: every selected model gets a unique, readable name without typing any. A name typed for a single model is kept as-is; a batch ignores it and gives each model its own default. This also changes the fallback used when a model has no name at all, which previously read `Provider ID / Model ID`.
+- Feat: **Test Connection** checks a provider before it is saved. It uses the values currently in the form rather than what is stored, reports how many models the endpoint returned, and warns when the Model ID that was typed is not among them.
+- Feat: The model table is grouped by provider under a collapsible heading, and the heading and column titles stay visible while a long list scrolls.
+- Feat: Alternating row shading and compact row actions replace the flat block of text and the two full-width buttons per row.
+
 ## 0.4.5
 
 - Feat: Add provider balance queries. Configure an endpoint per provider in the Configuration UI (**Balance** column) and PolyLLM shows the remaining credit in the status bar and through the **PolyLLM: Show Provider Balances** command.
